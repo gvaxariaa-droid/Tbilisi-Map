@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-paper font-sans text-ink antialiased;
+    font-feature-settings: 'tnum' 0;
+  }
+  :focus-visible {
+    outline-color: theme('colors.balcony.DEFAULT');
+  }
+}
+
+/* Panels and the toolbar answer a user action, so they get one short reveal. */
+@keyframes panel-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.panel-enter { animation: panel-in 160ms ease-out; }
+.panel-enter.-translate-x-1\/2 { animation: none; }
+@media (prefers-reduced-motion: reduce) {
+  .panel-enter { animation: none; }
+}
+
+/* MapLibre controls, restyled to match the interface */
+.maplibregl-ctrl-group {
+  border-radius: 6px !important;
+  box-shadow: 0 1px 2px rgba(27, 40, 48, 0.08), 0 8px 24px -6px rgba(27, 40, 48, 0.22) !important;
+}
+.maplibregl-ctrl-scale {
+  border-color: theme('colors.ink.soft') !important;
+  color: theme('colors.ink.DEFAULT');
+  background: rgba(255, 255, 255, 0.85) !important;
+  font: 11px/1.4 theme('fontFamily.sans');
+}
+.maplibregl-ctrl-attrib { font-size: 10.5px; }
+.maplibregl-canvas { outline: none; }
+
+@media print {
+  aside, .maplibregl-map, .maplibregl-control-container { display: none !important; }
+  section { position: static !important; box-shadow: none !important; max-height: none !important; width: 100% !important; }
+}

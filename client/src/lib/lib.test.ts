@@ -1,0 +1,124 @@
+// Run: npm test   (node --experimental-strip-types --test)
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { derivePrices, fromPolygon, ringArea, selfIntersects, toPolygon } from './geo.ts';
+import { formatArea, formatCoords, formatDate, formatUsd, formatUsdPerM2, parseAmount } from './format.ts';
+import { emptyLandFilters, emptyProjectFilters, filterLands, filterProjects } from './filters.ts';
+import type { LandPlot, LngLat, Project } from './types.ts';
+
+test('ringArea: 100 m × 100 m square in Tbilisi ≈ 10,000 m²', () => {
+  const lat0 = 41.7151;
+  const dLat = 100 / 111_132.95; // metres per degree latitude at 41.7° (ellipsoidal)
+  const dLng = 100 / (111_412.84 * Math.cos((lat0 * Math.PI) / 180));
+  const sq: LngLat[] = [
+    [44.79, lat0],
+    [44.79 + dLng, lat0],
+    [44.79 + dLng, lat0 + dLat],
+    [44.79, lat0 + dLat],
+  ];
+  const a = ringArea(sq);
+  // Spherical model vs ellipsoidal metre conversion: allow 0.5%.
+  assert.ok(Math.abs(a - 10_000) / 10_000 < 0.005, `area was ${a}`);
+  // Winding and closing point do not change the result
+  assert.ok(Math.abs(ringArea([...sq].reverse()) - a) < 1e-6);
+  assert.ok(Math.abs(ringArea([...sq, sq[0]]) - a) < 1e-6);
+});
+
+test('ringArea: triangle is half the square, degenerate rings are 0', () => {
+  const sq: LngLat[] = [[44.8, 41.7], [44.801, 41.7], [44.801, 41.701], [44.8, 41.701]];
+  const tri: LngLat[] = [sq[0], sq[1], sq[2]];
+  assert.ok(Math.abs(ringArea(tri) * 2 - ringArea(sq)) / ringArea(sq) < 0.001);
+  assert.equal(ringArea([[44.8, 41.7], [44.81, 41.7]]), 0);
+});
+
+test('toPolygon / fromPolygon round-trip', () => {
+  const v: LngLat[] = [[1, 1], [2, 1], [2, 2]];
+  const g = toPolygon(v);
+  assert.deepEqual(g.coordinates[0], [[1, 1], [2, 1], [2, 2], [1, 1]]);
+  assert.deepEqual(fromPolygon(g), v);
+});
+
+test('selfIntersects detects a bow-tie but not a simple polygon', () => {
+  assert.equal(selfIntersects([[0, 0], [2, 0], [2, 2], [0, 2]]), false);
+  assert.equal(selfIntersects([[0, 0], [2, 2], [2, 0], [0, 2]]), true);
+  assert.equal(selfIntersects([[0, 0], [4, 0], [4, 4], [2, 1], [0, 4]]), false); // concave is fine
+});
+
+test('derivePrices follows the field the user typed last', () => {
+  assert.deepEqual(derivePrices(1000, 250_000, null, 'total'), { total: 250_000, perM2: 250 });
+  assert.deepEqual(derivePrices(1000, null, 320, 'perM2'), { total: 320_000, perM2: 320 });
+  // area changed: keep the anchor, recompute the other
+  assert.deepEqual(derivePrices(1250, 250_000, 250, 'total'), { total: 250_000, perM2: 200 });
+  assert.deepEqual(derivePrices(1250, 250_000, 250, 'perM2'), { total: 312_500, perM2: 250 });
+  // no area: nothing derived
+  assert.deepEqual(derivePrices(null, 5, null, 'total'), { total: 5, perM2: null });
+  assert.deepEqual(derivePrices(3, 100, null, 'total'), { total: 100, perM2: 33.33 });
+});
+
+test('USD formatting', () => {
+  assert.equal(formatUsd(1400), '$1,400');
+  assert.equal(formatUsd(1400.5), '$1,400.50');
+  assert.equal(formatUsd(2_350_000), '$2,350,000');
+  assert.equal(formatUsdPerM2(1400), '$1,400 / m²');
+  assert.equal(formatUsd(null), '—');
+  assert.ok(!formatUsd(1).includes('£') && !formatUsd(1).includes('₾'));
+});
+
+test('area, coordinate and date formatting', () => {
+  assert.equal(formatArea(850), '850 m²');
+  assert.equal(formatArea(12_400), '12,400 m² (1.24 ha)');
+  assert.equal(formatArea(42.456), '42.46 m²');
+  assert.equal(formatCoords(41.715134, 44.8271), '41.715134° N, 44.827100° E');
+  assert.equal(formatDate('2027-03-15'), '15 Mar 2027');
+});
+
+test('parseAmount accepts common typing and rejects junk', () => {
+  assert.equal(parseAmount('1,400'), 1400);
+  assert.equal(parseAmount('$2 500.75'), 2500.75);
+  assert.equal(parseAmount(''), null);
+  assert.ok(Number.isNaN(parseAmount('12abc') as number));
+  assert.ok(Number.isNaN(parseAmount('-5') as number));
+});
+
+const proj = (o: Partial<Project>): Project => ({
+  id: 'x', name: 'P', developer: 'D', architect: null, construction_stage: 'planning', price_per_m2_usd: null,
+  handover_date: null, latitude: 41.7, longitude: 44.8, description: null, photo_id: null,
+  created_at: '2026-01-01', updated_at: '2026-01-01', ...o,
+});
+
+test('filterProjects: search, stage, developer and price range', () => {
+  const list = [
+    proj({ id: 'a', name: 'Vake Park Residence', developer: 'Archi', construction_stage: 'facade', price_per_m2_usd: 1400 }),
+    proj({ id: 'b', name: 'Saburtalo Tower', developer: 'Alliance', construction_stage: 'completed', price_per_m2_usd: 950 }),
+    proj({ id: 'c', name: 'Old Town Lofts', developer: 'Archi', construction_stage: 'planning', price_per_m2_usd: null }),
+  ];
+  const ids = (l: Project[]) => l.map((p) => p.id);
+  assert.deepEqual(ids(filterProjects(list, 'vake', emptyProjectFilters)), ['a']);
+  assert.deepEqual(ids(filterProjects(list, 'alliance', emptyProjectFilters)), ['b']);
+  assert.deepEqual(ids(filterProjects(list, '', { ...emptyProjectFilters, developer: 'Archi' })), ['a', 'c']);
+  assert.deepEqual(ids(filterProjects(list, '', { ...emptyProjectFilters, stages: ['completed'] })), ['b']);
+  assert.deepEqual(ids(filterProjects(list, '', { ...emptyProjectFilters, minPrice: '1000' })), ['a']);
+});
+
+const land = (o: Partial<LandPlot>): LandPlot => ({
+  id: 'x', name: 'L', geometry: toPolygon([[0, 0], [1, 0], [1, 1]]), area_m2: 1000, area_is_manual: false,
+  computed_area_m2: 1000, total_price_usd: null, price_per_m2_usd: null, k2_coefficient: null, notes: null,
+  photo_ids: [], created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', ...o,
+});
+
+test('filterLands: owner/agent search, ranges and sorting', () => {
+  const list = [
+    land({ id: 'a', name: 'Digomi plot', owner_name: 'Nino', area_m2: 5000, total_price_usd: 500_000, price_per_m2_usd: 100, k2_coefficient: 2.5, created_at: '2026-03-01' }),
+    land({ id: 'b', name: 'Krtsanisi plot', agent_name: 'Giorgi', area_m2: 1200, total_price_usd: 360_000, price_per_m2_usd: 300, k2_coefficient: 1.2, created_at: '2026-05-01' }),
+    land({ id: 'c', name: 'Lisi slope', area_m2: 9000, created_at: '2026-04-01' }),
+  ];
+  const ids = (l: LandPlot[]) => l.map((p) => p.id);
+  assert.deepEqual(ids(filterLands(list, '', emptyLandFilters)), ['b', 'c', 'a']); // newest first
+  assert.deepEqual(ids(filterLands(list, 'nino', emptyLandFilters)), ['a']);
+  assert.deepEqual(ids(filterLands(list, '', { ...emptyLandFilters, field: 'agent', query: 'giorgi' })), ['b']);
+  assert.deepEqual(ids(filterLands(list, '', { ...emptyLandFilters, field: 'name', query: 'giorgi' })), []);
+  assert.deepEqual(ids(filterLands(list, '', { ...emptyLandFilters, minArea: '2000' })), ['c', 'a']);
+  assert.deepEqual(ids(filterLands(list, '', { ...emptyLandFilters, minK2: '2' })), ['a']);
+  assert.deepEqual(ids(filterLands(list, '', { ...emptyLandFilters, sort: 'price_desc' })), ['a', 'b', 'c']);
+  assert.deepEqual(ids(filterLands(list, '', { ...emptyLandFilters, sort: 'area_asc' })), ['b', 'a', 'c']);
+});

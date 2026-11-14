@@ -1,0 +1,26 @@
+# Render Blueprint: New > Blueprint > select this repository.
+# Creates a PostgreSQL database (PostGIS is enabled by the first migration) and a Docker web service.
+databases:
+  - name: tpm-db
+    databaseName: tpm
+    plan: basic-256mb   # paid plan: includes daily backups / point-in-time recovery
+    region: frankfurt
+
+services:
+  - type: web
+    name: tbilisi-property-map
+    runtime: docker
+    plan: starter
+    region: frankfurt
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase: { name: tpm-db, property: connectionString }
+      - key: JWT_SECRET
+        generateValue: true
+      - key: ADMIN_EMAIL
+        sync: false        # you will be asked for it
+      - key: ADMIN_PASSWORD
+        sync: false        # remove after the first successful start
+      - key: STORAGE_DRIVER
+        value: local   # photos are lost on redeploy; switch to s3 (R2) and add S3_* keys for permanent photos

@@ -1,0 +1,120 @@
+import { z } from 'zod';
+import { round2 } from './http.js';
+
+export const STAGES = [
+  'planning',
+  'design',
+  'construction',
+  'structure',
+  'facade',
+  'interior_works',
+  'completed',
+  'delivered',
+];
+export const UNDER_CONSTRUCTION_STAGES = ['construction', 'structure', 'facade', 'interior_works'];
+export const COMPLETED_STAGES = ['completed', 'delivered'];
+
+/** Optional free text: '' and null become null. */
+const optText = (max) =>
+  z
+    .union([z.string().trim().max(max), z.null()])
+    .optional()
+    .transform((v) => (v ? v : null));
+
+const optPhone = z
+  .union([
+    z
+      .string()
+      .trim()
+      .max(40)
+      .regex(/^[+0-9 ()\-.]*$/, 'Phone numbers may contain digits, spaces, +, -, ( and ) only'),
+    z.null(),
+  ])
+  .optional()
+  .transform((v) => (v ? v : null));
+
+/** Optional non-negative USD amount. */
+const usd = (max) => z.number().finite().min(0).max(max).nullable().optional().transform((v) => v ?? null);
+
+const position = z.tuple([z.number().finite().min(-180).max(180), z.number().finite().min(-90).max(90)]);
+
+export const polygonSchema = z
+  .object({
+    type: z.literal('Polygon'),
+    coordinates: z.array(z.array(position).min(4).max(1000)).length(1, 'Land plots must be a single polygon without holes'),
+  })
+  .refine(
+    (g) => {
+      const ring = g.coordinates[0];
+      const a = ring[0];
+      const b = ring[ring.length - 1];
+      return a[0] === b[0] && a[1] === b[1];
+    },
+    { message: 'Polygon ring must be closed (first and last point equal)' },
+  );
+
+export const projectSchema = z.object({
+  name: z.string().trim().min(1, 'Project name is required').max(200),
+  developer: z.string().trim().min(1, 'Developer is required').max(200),
+  architect: optText(200),
+  construction_stage: z.enum(STAGES),
+  price_per_m2_usd: usd(1_000_000),
+  handover_date: z
+    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD'), z.literal(''), z.null()])
+    .optional()
+    .transform((v) => v || null),
+  latitude: z.number().finite().min(-90).max(90),
+  longitude: z.number().finite().min(-180).max(180),
+  description: optText(5000),
+});
+
+export const landSchema = z
+  .object({
+    name: z.string().trim().min(1, 'Land plot name is required').max(200),
+    geometry: polygonSchema,
+    area_is_manual: z.boolean().optional().default(false),
+    area_m2: z.number().finite().positive().max(1e10).nullable().optional(),
+    total_price_usd: usd(1e12),
+    price_per_m2_usd: usd(1_000_000),
+    k2_coefficient: z.number().finite().min(0).max(100).nullable().optional().transform((v) => v ?? null),
+    owner_name: optText(200),
+    owner_phone: optPhone,
+    agent_name: optText(200),
+    agent_phone: optPhone,
+    notes: optText(5000),
+  })
+  .refine((d) => !d.area_is_manual || (d.area_m2 != null && d.area_m2 > 0), {
+    message: 'Enter a manual area greater than 0, or switch back to the calculated area',
+    path: ['area_m2'],
+  });
+
+export const loginSchema = z.object({
+  email: z.string().trim().toLowerCase().email().max(254),
+  password: z.string().min(1).max(200),
+});
+
+const password = z.string().min(10, 'Passwords need at least 10 characters').max(200);
+
+export const createUserSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  email: z.string().trim().toLowerCase().email().max(254),
+  password,
+  role: z.enum(['admin', 'viewer']),
+});
+
+export const updateUserSchema = z.object({
+  name: z.string().trim().min(1).max(120).optional(),
+  role: z.enum(['admin', 'viewer']).optional(),
+  password: password.optional(),
+});
+
+/**
+ * Fill in whichever price is missing from the other one and the area.
+ * When both are supplied they are kept as given (the client keeps them consistent).
+ */
+export function reconcilePrices(area, total, perM2) {
+  if (!(area > 0)) return { total, perM2 };
+  if (total != null && perM2 == null) return { total, perM2: round2(total / area) };
+  if (perM2 != null && total == null) return { total: round2(perM2 * area), perM2 };
+  return { total, perM2 };
+}
