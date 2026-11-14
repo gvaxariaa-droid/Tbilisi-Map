@@ -1,13 +1,16 @@
 import type { StyleSpecification } from 'maplibre-gl';
 
 // Tile providers are configurable at build time (see client/.env.example).
-// Defaults: OpenStreetMap standard tiles + Esri World Imagery with Esri place labels.
+// Defaults: Esri World Street Map (street names, buildings) + Esri World Imagery with Esri place labels.
 // For heavy production traffic use a commercial provider (e.g. MapTiler) and set the URLs.
 const env = import.meta.env;
 
-const STREETS = env.VITE_STREETS_TILE_URL || 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+const STREETS =
+  env.VITE_STREETS_TILE_URL ||
+  'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}';
 const STREETS_ATTR =
-  env.VITE_STREETS_ATTRIBUTION || '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
+  env.VITE_STREETS_ATTRIBUTION ||
+  'Esri, HERE, Garmin, © <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, and the GIS user community';
 const SATELLITE =
   env.VITE_SATELLITE_TILE_URL ||
   'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';

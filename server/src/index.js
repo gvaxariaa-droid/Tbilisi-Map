@@ -40,6 +40,8 @@ app.use(
       },
     },
     crossOriginEmbedderPolicy: false,
+    // Tile servers (OpenStreetMap in particular) refuse requests that carry no Referer.
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   }),
 );
 

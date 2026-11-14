@@ -1,7 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import type { LngLat, Project, ProjectInput, Stage } from '../lib/types.ts';
-import { STAGES } from '../lib/types.ts';
-import { amountToInput, parseAmount } from '../lib/format.ts';
+import type { Frame, LngLat, PriceInput, Project, ProjectInput, Stage } from '../lib/types.ts';
+import { FRAMES, STAGES } from '../lib/types.ts';
+import { amountToInput, formatArea, parseAmount } from '../lib/format.ts';
+import { ringArea, toPolygon } from '../lib/geo.ts';
+import { currentPrices } from '../lib/prices.ts';
 import { Button, Field, Panel, TextInput, UnitInput, inputClass } from './ui.tsx';
 import { SinglePhotoField, type SinglePhotoValue } from './PhotoFields.tsx';
 
@@ -10,23 +12,44 @@ interface Props {
   /** Current red-circle position; clicking the map moves it and fills the coordinates. */
   selection: LngLat | null;
   onCoordsChange(p: LngLat | null): void;
+  /** Territory being drawn or already drawn for this form. */
+  area: LngLat[] | null;
+  drawingArea: boolean;
+  onDrawArea(): void;
+  onClearArea(): void;
   onSave(input: ProjectInput, photo: SinglePhotoValue): Promise<void>;
   onCancel(): void;
 }
 
 const near = (a: number, b: number) => Math.abs(a - b) < 1e-9;
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+};
 
-export default function ProjectForm({ project, selection, onCoordsChange, onSave, onCancel }: Props) {
+type PriceText = Record<Frame, { min: string; max: string }>;
+
+export default function ProjectForm(props: Props) {
+  const { project, selection, onCoordsChange, area, drawingArea, onDrawArea, onClearArea, onSave, onCancel } = props;
   const [name, setName] = useState(project?.name ?? '');
   const [developer, setDeveloper] = useState(project?.developer ?? '');
   const [architect, setArchitect] = useState(project?.architect ?? '');
   const [stage, setStage] = useState<Stage>(project?.construction_stage ?? 'planning');
-  const [price, setPrice] = useState(amountToInput(project?.price_per_m2_usd));
   const [handover, setHandover] = useState(project?.handover_date ?? '');
   const [lat, setLat] = useState(project ? String(project.latitude) : selection ? selection[1].toFixed(6) : '');
   const [lng, setLng] = useState(project ? String(project.longitude) : selection ? selection[0].toFixed(6) : '');
   const [description, setDescription] = useState(project?.description ?? '');
   const [photo, setPhoto] = useState<SinglePhotoValue>({ file: null, remove: false });
+  const [prices, setPrices] = useState<PriceText>(() => {
+    const cur = project ? currentPrices(project) : {};
+    const out = {} as PriceText;
+    for (const f of FRAMES) {
+      const e = cur[f.value];
+      out[f.value] = { min: amountToInput(e?.min), max: amountToInput(e?.max) };
+    }
+    return out;
+  });
+  const [priceDate, setPriceDate] = useState(today());
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -53,17 +76,33 @@ export default function ProjectForm({ project, selection, onCoordsChange, onSave
     }
   };
 
+  const setPrice = (f: Frame, key: 'min' | 'max', v: string) => setPrices((p) => ({ ...p, [f]: { ...p[f], [key]: v } }));
+
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
     if (!name.trim()) errs.name = 'Enter the project name.';
     if (!developer.trim()) errs.developer = 'Enter the developer or development company.';
-    const p = parseAmount(price);
-    if (Number.isNaN(p)) errs.price = 'Enter a number in US dollars, e.g. 1400.';
     const y = Number(lat);
     const x = Number(lng);
     if (!lat.trim() || !Number.isFinite(y) || Math.abs(y) > 90) errs.lat = 'Click the map or enter a latitude between -90 and 90.';
     if (!lng.trim() || !Number.isFinite(x) || Math.abs(x) > 180) errs.lng = 'Enter a longitude between -180 and 180.';
+    if (drawingArea) errs.area = 'Finish drawing the territory first (Finish polygon, then Done).';
+
+    const priceList: PriceInput[] = [];
+    for (const f of FRAMES) {
+      const min = parseAmount(prices[f.value].min);
+      const max = parseAmount(prices[f.value].max);
+      if (Number.isNaN(min) || Number.isNaN(max)) {
+        errs[`price_${f.value}`] = 'Enter numbers in US dollars, e.g. 1200.';
+      } else if (min == null && max != null) {
+        errs[`price_${f.value}`] = 'Enter the lower price in "From".';
+      } else if (min != null && max != null && max < min) {
+        errs[`price_${f.value}`] = '"To" must be at least "From".';
+      } else if (min != null) {
+        priceList.push({ frame: f.value, min, max: max != null && max !== min ? max : null });
+      }
+    }
     setErrors(errs);
     if (Object.keys(errs).length) return;
 
@@ -76,11 +115,13 @@ export default function ProjectForm({ project, selection, onCoordsChange, onSave
           developer: developer.trim(),
           architect: architect.trim() || null,
           construction_stage: stage,
-          price_per_m2_usd: p as number | null,
           handover_date: handover || null,
           latitude: y,
           longitude: x,
           description: description.trim() || null,
+          area: area && area.length >= 3 ? toPolygon(area) : null,
+          prices: priceList,
+          price_date: priceDate || null,
         },
         photo,
       );
@@ -89,6 +130,8 @@ export default function ProjectForm({ project, selection, onCoordsChange, onSave
       setBusy(false);
     }
   };
+
+  const hasArea = !!area && area.length >= 3;
 
   return (
     <Panel
@@ -130,9 +173,35 @@ export default function ProjectForm({ project, selection, onCoordsChange, onSave
             <TextInput type="date" value={handover} onChange={(e) => setHandover(e.target.value)} />
           </Field>
         </div>
-        <Field label="Price per square metre" error={errors.price}>
-          <UnitInput prefix="$" unit="USD/m²" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="1400" />
-        </Field>
+
+        <fieldset className="rounded-md border border-line p-3">
+          <legend className="px-1 text-[12.5px] font-medium text-ink-soft">Price per m² (USD)</legend>
+          <p className="mb-2 text-xs text-ink-faint">
+            Enter one price in "From", or a range with "To". Leave a frame empty if the project does not sell it.
+          </p>
+          <div className="space-y-2">
+            {FRAMES.map((f) => (
+              <div key={f.value}>
+                <div className="grid grid-cols-[6.5rem_1fr_1fr] items-center gap-2">
+                  <span className="flex items-center gap-1.5 text-[13px] text-ink">
+                    <span className="h-3 w-3 shrink-0 rounded-sm ring-1 ring-ink/25" style={{ background: f.swatch }} />
+                    {f.label}
+                  </span>
+                  <UnitInput prefix="$" placeholder="From" aria-label={`${f.label} price from`} value={prices[f.value].min} onChange={(e) => setPrice(f.value, 'min', e.target.value)} />
+                  <UnitInput prefix="$" placeholder="To" aria-label={`${f.label} price to`} value={prices[f.value].max} onChange={(e) => setPrice(f.value, 'max', e.target.value)} />
+                </div>
+                {errors[`price_${f.value}`] && <p className="mt-1 text-xs text-signal">{errors[`price_${f.value}`]}</p>}
+              </div>
+            ))}
+          </div>
+          <Field
+            label="Price date"
+            className="mt-3"
+            hint={project ? 'Prices you change are added to the price history with this date. Earlier prices are kept.' : 'The date these prices apply from.'}
+          >
+            <TextInput type="date" value={priceDate} onChange={(e) => setPriceDate(e.target.value)} />
+          </Field>
+        </fieldset>
 
         <fieldset className="rounded-md border border-line p-3">
           <legend className="px-1 text-[12.5px] font-medium text-ink-soft">Location</legend>
@@ -145,6 +214,27 @@ export default function ProjectForm({ project, selection, onCoordsChange, onSave
               <TextInput inputMode="decimal" value={lng} onChange={(e) => typeCoord(lat, e.target.value)} placeholder="44.793000" className="tabular-nums" />
             </Field>
           </div>
+        </fieldset>
+
+        <fieldset className="rounded-md border border-line p-3">
+          <legend className="px-1 text-[12.5px] font-medium text-ink-soft">Project territory (optional)</legend>
+          {drawingArea ? (
+            <p className="text-xs text-ink-soft">Drawing on the map. Use the toolbar at the top to finish, then press Done.</p>
+          ) : hasArea ? (
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[13px] tabular-nums text-ink">{formatArea(ringArea(area!))}</span>
+              <span className="flex gap-1.5">
+                <Button size="sm" onClick={onDrawArea}>Edit territory</Button>
+                <Button size="sm" variant="ghost" onClick={onClearArea}>Remove</Button>
+              </span>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-ink-faint">Outline the site by clicking its corners on the map.</p>
+              <Button size="sm" onClick={onDrawArea}>Draw territory</Button>
+            </div>
+          )}
+          {errors.area && <p className="mt-1 text-xs text-signal">{errors.area}</p>}
         </fieldset>
 
         <SinglePhotoField existingId={project?.photo_id ?? null} value={photo} onChange={setPhoto} />

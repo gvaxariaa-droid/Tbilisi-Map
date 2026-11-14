@@ -93,6 +93,11 @@ Contacts are removed **on the server** for anonymous requests; they are never se
 * **Land drawing.** *Add land* → click corners → click the first corner (or *Finish polygon*, or Enter). The plot then stays editable while you fill in the form: drag corners, drag the small edge dots to add corners, select a corner and press Delete (or *Remove corner*) to remove it, Ctrl+Z to undo, Esc to cancel. Crossing edges are blocked.
 * **Area.** Shown live in the browser (geodesic formula); on save the server recalculates with PostGIS `ST_Area(geography)` on the WGS84 ellipsoid, which is the stored value. An admin can override it with a hand-entered area (e.g. from a cadastral extract); both values stay visible.
 * **Prices.** All amounts are USD. Type either the total or the price per m²; the other is computed (total = area × price/m²). Whichever you typed last is kept when the area changes.
+* **Project prices.** Each project can have a price per m² for black frame, white frame and green frame, as one price or a range (from–to). Every change is saved as a new dated entry in the price history; old prices are kept, so you can see how prices moved. The newest entry per frame is the current price. A range counts as its midpoint in averages.
+* **Radius analysis.** Click any point on the map and choose 500 m, 1 km and/or 2 km. Circles appear, and a table shows how many projects fall inside and their average current price per m² for each frame and overall.
+* **Project territories.** In the project form, *Draw territory* outlines the site with the same drawing tools as land; *Done* returns to the form.
+* **Map layers.** The toggles at the bottom left show or hide projects, project areas, land plots and land price tags.
+* **Land plots.** Choose a map colour (light orange, red, green) and record the cadastral code; the code is searchable. From zoom 14, each plot shows a small tag with its total price and area.
 * **Statistics.** SQL aggregates over all records. "Under construction" = construction, structure, facade, interior works. "Completed" = completed + delivered.
 
 ## Interpretations and deviations from the brief

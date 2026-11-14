@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { LandPlot } from '../lib/types.ts';
 import { photoUrl } from '../lib/api.ts';
+import { landColor } from '../lib/types.ts';
 import { DASH, formatArea, formatNumber, formatUsd, formatUsdPerM2, telHref } from '../lib/format.ts';
 import { Button, Panel, Row } from './ui.tsx';
 
@@ -31,6 +32,7 @@ export default function LandCard({ land: l, isAdmin, signedIn, onClose, onEdit, 
       title={l.name}
       onClose={onClose}
       accent="land"
+      accentColor={landColor(l.color).fill}
       footer={
         <div className="flex gap-2">
           {isAdmin && (
@@ -85,6 +87,9 @@ export default function LandCard({ land: l, isAdmin, signedIn, onClose, onEdit, 
         )}
 
         <dl className="mt-2 divide-y divide-line/70">
+          <Row label="Cadastral code">
+            {l.cadastral_code ? <span className="select-all tabular-nums">{l.cadastral_code}</span> : DASH}
+          </Row>
           <Row label="Price per m²"><span className="tabular-nums">{formatUsdPerM2(l.price_per_m2_usd)}</span></Row>
           <Row label="K2 coefficient"><span className="tabular-nums">{formatNumber(l.k2_coefficient)}</span></Row>
           {l.area_is_manual && <Row label="Drawn area"><span className="tabular-nums">{formatArea(l.computed_area_m2)}</span></Row>}

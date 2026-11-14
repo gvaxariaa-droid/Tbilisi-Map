@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { LandInput, LandPlot, LngLat } from '../lib/types.ts';
+import type { LandColor, LandInput, LandPlot, LngLat } from '../lib/types.ts';
+import { LAND_COLORS } from '../lib/types.ts';
 import { amountToInput, formatArea, formatUsd, parseAmount } from '../lib/format.ts';
 import { derivePrices, ringArea, round2, selfIntersects, toPolygon, type PriceAnchor } from '../lib/geo.ts';
 import { Button, Field, Panel, TextInput, UnitInput, inputClass } from './ui.tsx';
@@ -26,6 +27,8 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
   const [agentName, setAgentName] = useState(land?.agent_name ?? '');
   const [agentPhone, setAgentPhone] = useState(land?.agent_phone ?? '');
   const [notes, setNotes] = useState(land?.notes ?? '');
+  const [color, setColor] = useState<LandColor>(land?.color ?? 'orange');
+  const [cadastral, setCadastral] = useState(land?.cadastral_code ?? '');
   const [photos, setPhotos] = useState<MultiPhotoValue>({ added: [], removedIds: [] });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -67,6 +70,7 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
     if (Number.isNaN(t)) errs.total = 'Enter a number in US dollars.';
     if (Number.isNaN(p)) errs.perM2 = 'Enter a number in US dollars.';
     if (Number.isNaN(k) || (k != null && k > 100)) errs.k2 = 'Enter a coefficient such as 2.5.';
+    if (cadastral && !/^[0-9A-Za-z.\-/ ]*$/.test(cadastral)) errs.cadastral = 'Use digits, dots and dashes, e.g. 01.72.14.009.012';
     for (const [key, v] of [['ownerPhone', ownerPhone], ['agentPhone', agentPhone]] as const) {
       if (v && !/^[+0-9 ()\-.]*$/.test(v)) errs[key] = 'Use digits, spaces, +, - and brackets only.';
     }
@@ -90,6 +94,8 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
           agent_name: agentName.trim() || null,
           agent_phone: agentPhone.trim() || null,
           notes: notes.trim() || null,
+          color,
+          cadastral_code: cadastral.trim() || null,
         },
         photos,
       );
@@ -129,6 +135,31 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
         <Field label="Land plot name" error={errors.name}>
           <TextInput value={name} onChange={(e) => setName(e.target.value)} maxLength={200} autoFocus placeholder="e.g. Digomi, Beliashvili St. plot" />
         </Field>
+
+        <Field label="Cadastral code" error={errors.cadastral}>
+          <TextInput value={cadastral} onChange={(e) => setCadastral(e.target.value)} maxLength={60} placeholder="e.g. 01.72.14.009.012" className="tabular-nums" />
+        </Field>
+
+        <div>
+          <span className="mb-1 block text-[12.5px] font-medium text-ink-soft">Colour on the map</span>
+          <div className="flex gap-1.5" role="radiogroup" aria-label="Colour on the map">
+            {LAND_COLORS.map((c) => (
+              <button
+                key={c.value}
+                type="button"
+                role="radio"
+                aria-checked={color === c.value}
+                onClick={() => setColor(c.value)}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] ring-1 ring-inset ${
+                  color === c.value ? 'bg-white font-medium text-ink ring-2 ring-ink' : 'text-ink-soft ring-line hover:text-ink'
+                }`}
+              >
+                <span className="h-3.5 w-3.5 rounded-sm" style={{ background: c.fill, boxShadow: `inset 0 0 0 1.5px ${c.line}` }} />
+                {c.label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div>
           <label className="flex items-center gap-2 text-[13px] text-ink-soft">

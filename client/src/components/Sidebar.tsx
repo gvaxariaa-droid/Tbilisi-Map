@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import type { LandPlot, Project, Stats, User } from '../lib/types.ts';
-import { STAGES, stageLabel } from '../lib/types.ts';
+import { FRAMES, STAGES, landColor, stageLabel } from '../lib/types.ts';
+import { priceSpan } from '../lib/prices.ts';
 import {
   countActiveLandFilters,
   countActiveProjectFilters,
@@ -11,7 +12,7 @@ import {
   type LandSort,
   type ProjectFilters,
 } from '../lib/filters.ts';
-import { DASH, formatArea, formatUsd, formatUsdPerM2 } from '../lib/format.ts';
+import { DASH, formatArea, formatPriceRange, formatUsd, formatUsdPerM2 } from '../lib/format.ts';
 import { Button, inputClass } from './ui.tsx';
 
 export type Tab = 'projects' | 'land' | 'overview';
@@ -154,7 +155,12 @@ function ProjectsTab(p: Props) {
                     {x.developer}, {stageLabel(x.construction_stage).toLowerCase()}
                   </span>
                 </span>
-                <span className="shrink-0 text-[12px] tabular-nums text-ink-soft">{x.price_per_m2_usd != null ? formatUsdPerM2(x.price_per_m2_usd) : ''}</span>
+                <span className="shrink-0 text-[12px] tabular-nums text-ink-soft">
+                  {(() => {
+                    const span = priceSpan(x);
+                    return span ? formatPriceRange(span.lo, span.hi === span.lo ? null : span.hi) : '';
+                  })()}
+                </span>
               </button>
             </li>
           ))}
@@ -183,13 +189,13 @@ function LandTab(p: Props) {
       <div className="flex gap-1.5">
         <input
           className={`${inputClass} h-8 min-w-0 flex-1 py-1`}
-          placeholder={signedIn ? 'Search land inventory' : 'Search by plot name'}
+          placeholder={signedIn ? 'Name, code, owner, agent' : 'Plot name or cadastral code'}
           aria-label="Search land inventory"
           value={f.query}
           onChange={(e) => set({ query: e.target.value })}
         />
         {signedIn && (
-          <select className={`${inputClass} h-8 w-[5.8rem] py-1`} aria-label="Search in" value={f.field} onChange={(e) => set({ field: e.target.value as LandField })}>
+          <select className={`${inputClass} h-8 shrink-0 py-1`} style={{ width: '6.5rem' }} aria-label="Search in" value={f.field} onChange={(e) => set({ field: e.target.value as LandField })}>
             <option value="all">All</option>
             <option value="name">Name</option>
             <option value="owner">Owner</option>
@@ -205,7 +211,7 @@ function LandTab(p: Props) {
       </Details>
       <div className="flex items-center justify-between gap-2">
         <ListHeader shown={p.visibleLands.length} total={p.lands.length} noun="plots" />
-        <select className={`${inputClass} h-7 w-auto py-0 text-[12px]`} aria-label="Sort land plots" value={f.sort} onChange={(e) => set({ sort: e.target.value as LandSort })}>
+        <select className={`${inputClass} h-7 shrink-0 py-0 text-[12px]`} style={{ width: 'auto' }} aria-label="Sort land plots" value={f.sort} onChange={(e) => set({ sort: e.target.value as LandSort })}>
           {SORTS.map((s) => (
             <option key={s.value} value={s.value}>{s.label}</option>
           ))}
@@ -222,11 +228,15 @@ function LandTab(p: Props) {
                 onClick={() => p.onSelectLand(l.id)}
                 className={`flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-white ${l.id === p.selectedLandId ? 'bg-white ring-1 ring-ochre/60' : ''}`}
               >
-                <span className="mt-1 h-2.5 w-2.5 shrink-0 rotate-45 bg-ochre ring-1 ring-ochre-deep/40" />
+                <span
+                  className="mt-1 h-2.5 w-2.5 shrink-0 rotate-45"
+                  style={{ background: landColor(l.color).fill, boxShadow: `0 0 0 1px ${landColor(l.color).line}` }}
+                />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13.5px] font-medium text-ink">{l.name}</span>
                   <span className="block truncate text-[12px] text-ink-soft">
                     {formatArea(l.area_m2, false)}
+                    {l.cadastral_code ? `, ${l.cadastral_code}` : ''}
                     {l.k2_coefficient != null ? `, K2 ${l.k2_coefficient}` : ''}
                     {signedIn && l.owner_name ? `, ${l.owner_name}` : ''}
                   </span>
@@ -262,10 +272,24 @@ function OverviewTab({ stats }: Props) {
         <h3 className="mb-1.5 text-[13px] font-semibold text-ink">Development projects</h3>
         <div className="grid grid-cols-2 gap-1.5">
           <Stat tone="project" label="Projects" value={String(stats.project_count)} />
-          <Stat tone="project" label="Average price" value={stats.avg_project_price_per_m2_usd != null ? formatUsdPerM2(stats.avg_project_price_per_m2_usd) : DASH} />
+          <Stat tone="project" label="Average price, all frames" value={stats.avg_project_price_per_m2_usd != null ? formatUsdPerM2(stats.avg_project_price_per_m2_usd) : DASH} />
           <Stat tone="project" label="Under construction" value={String(stats.under_construction_count)} />
           <Stat tone="project" label="Completed" value={String(stats.completed_count)} />
         </div>
+        <ul className="mt-1.5 divide-y divide-line rounded bg-white px-3">
+          {FRAMES.map((f) => {
+            const v = stats[`avg_${f.value}_frame_usd` as const];
+            return (
+              <li key={f.value} className="flex items-center justify-between py-1.5 text-[12.5px]">
+                <span className="flex items-center gap-1.5 text-ink-soft">
+                  <span className="h-2.5 w-2.5 rounded-sm ring-1 ring-ink/25" style={{ background: f.swatch }} />
+                  {f.label}, average
+                </span>
+                <span className="font-semibold tabular-nums text-ink">{v != null ? formatUsdPerM2(v) : DASH}</span>
+              </li>
+            );
+          })}
+        </ul>
       </section>
       <section>
         <h3 className="mb-1.5 text-[13px] font-semibold text-ink">Land</h3>
@@ -279,7 +303,7 @@ function OverviewTab({ stats }: Props) {
       </section>
       <p className="text-[11.5px] leading-relaxed text-ink-faint">
         Counted from every saved record, not just the filtered view. Under construction covers the construction, structure, facade and
-        interior works stages; completed includes delivered. Averages are simple means of records that have a price.
+        interior works stages; completed includes delivered. Averages use each project's current price; a price range counts as its midpoint.
       </p>
     </div>
   );
@@ -287,8 +311,8 @@ function OverviewTab({ stats }: Props) {
 
 function ListHeader({ shown, total, noun }: { shown: number; total: number; noun: string }) {
   return (
-    <p className="text-[12px] text-ink-soft">
-      {shown === total ? `${total} ${noun}` : `Showing ${shown} of ${total} ${noun}`}
+    <p className="min-w-0 whitespace-nowrap text-[12px] text-ink-soft">
+      {shown === total ? `${total} ${total === 1 ? noun.replace(/s$/, '') : noun}` : `Showing ${shown} of ${total} ${noun}`}
     </p>
   );
 }

@@ -1,5 +1,6 @@
 import type { LandPlot, Project, Stage } from './types.ts';
 import { parseAmount } from './format.ts';
+import { priceSpan } from './prices.ts';
 
 export interface ProjectFilters {
   stages: Stage[];
@@ -61,26 +62,40 @@ function inRange(value: number | null | undefined, min: string, max: string) {
   return true;
 }
 
+/** A project matches a price range when any of its current prices (or price ranges) falls inside it. */
+function priceOverlaps(p: Project, min: string, max: string) {
+  const lo = parseAmount(min);
+  const hi = parseAmount(max);
+  const hasLo = lo != null && !Number.isNaN(lo);
+  const hasHi = hi != null && !Number.isNaN(hi);
+  if (!hasLo && !hasHi) return true;
+  const span = priceSpan(p);
+  if (!span) return false;
+  if (hasLo && span.hi < (lo as number)) return false;
+  if (hasHi && span.lo > (hi as number)) return false;
+  return true;
+}
+
 export function filterProjects(list: Project[], search: string, f: ProjectFilters): Project[] {
   return list.filter(
     (p) =>
       matches([p.name, p.developer, p.architect], search) &&
       (f.stages.length === 0 || f.stages.includes(p.construction_stage)) &&
       (!f.developer || p.developer === f.developer) &&
-      inRange(p.price_per_m2_usd, f.minPrice, f.maxPrice),
+      priceOverlaps(p, f.minPrice, f.maxPrice),
   );
 }
 
 function landFieldValues(l: LandPlot, field: LandField) {
   switch (field) {
     case 'name':
-      return [l.name];
+      return [l.name, l.cadastral_code];
     case 'owner':
       return [l.owner_name, l.owner_phone];
     case 'agent':
       return [l.agent_name, l.agent_phone];
     default:
-      return [l.name, l.owner_name, l.agent_name, l.owner_phone, l.agent_phone];
+      return [l.name, l.cadastral_code, l.owner_name, l.agent_name, l.owner_phone, l.agent_phone];
   }
 }
 
@@ -105,7 +120,7 @@ export function filterLands(list: LandPlot[], search: string, f: LandFilters): L
   return list
     .filter(
       (l) =>
-        matches([l.name, l.owner_name, l.agent_name], search) &&
+        matches([l.name, l.cadastral_code, l.owner_name, l.agent_name], search) &&
         matches(landFieldValues(l, f.field), f.query) &&
         inRange(l.area_m2, f.minArea, f.maxArea) &&
         inRange(l.total_price_usd, f.minTotal, f.maxTotal) &&

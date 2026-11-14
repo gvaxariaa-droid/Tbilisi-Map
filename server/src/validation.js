@@ -53,19 +53,46 @@ export const polygonSchema = z
     { message: 'Polygon ring must be closed (first and last point equal)' },
   );
 
+export const FRAMES = ['black', 'white', 'green'];
+
+const priceEntry = z
+  .object({
+    frame: z.enum(FRAMES),
+    min: z.number().finite().min(0).max(1_000_000),
+    max: z.number().finite().min(0).max(1_000_000).nullable().optional().transform((v) => v ?? null),
+  })
+  .refine((p) => p.max == null || p.max >= p.min, { message: 'The upper price must be at least the lower price', path: ['max'] })
+  // "1,200 to 1,200" is a single price
+  .transform((p) => ({ ...p, max: p.max != null && p.max === p.min ? null : p.max }));
+
+const dateStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+
 export const projectSchema = z.object({
   name: z.string().trim().min(1, 'Project name is required').max(200),
   developer: z.string().trim().min(1, 'Developer is required').max(200),
   architect: optText(200),
   construction_stage: z.enum(STAGES),
-  price_per_m2_usd: usd(1_000_000),
   handover_date: z
-    .union([z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD'), z.literal(''), z.null()])
+    .union([dateStr, z.literal(''), z.null()])
     .optional()
     .transform((v) => v || null),
   latitude: z.number().finite().min(-90).max(90),
   longitude: z.number().finite().min(-180).max(180),
   description: optText(5000),
+  /** Optional project territory drawn on the map. */
+  area: polygonSchema.nullable().optional().transform((v) => v ?? null),
+  /** Current prices as entered in the form; only frames that changed are added to the history. */
+  prices: z
+    .array(priceEntry)
+    .max(3)
+    .optional()
+    .default([])
+    .refine((list) => new Set(list.map((p) => p.frame)).size === list.length, { message: 'Enter each frame once' }),
+  /** Date the entered prices take effect; defaults to today. */
+  price_date: z
+    .union([dateStr, z.literal(''), z.null()])
+    .optional()
+    .transform((v) => v || null),
 });
 
 export const landSchema = z
@@ -77,6 +104,18 @@ export const landSchema = z
     total_price_usd: usd(1e12),
     price_per_m2_usd: usd(1_000_000),
     k2_coefficient: z.number().finite().min(0).max(100).nullable().optional().transform((v) => v ?? null),
+    color: z.enum(['red', 'orange', 'green']).optional().default('orange'),
+    cadastral_code: z
+      .union([
+        z
+          .string()
+          .trim()
+          .max(60)
+          .regex(/^[0-9A-Za-z.\-/ ]*$/, 'Cadastral codes contain digits, dots and dashes, e.g. 01.72.14.009.012'),
+        z.null(),
+      ])
+      .optional()
+      .transform((v) => (v ? v : null)),
     owner_name: optText(200),
     owner_phone: optPhone,
     agent_name: optText(200),

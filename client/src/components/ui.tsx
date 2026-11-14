@@ -83,6 +83,7 @@ export function Panel({
   children,
   footer,
   accent,
+  accentColor,
   wide,
 }: {
   title?: ReactNode;
@@ -90,16 +91,18 @@ export function Panel({
   children: ReactNode;
   footer?: ReactNode;
   accent?: 'project' | 'land' | 'draft';
+  /** Overrides the accent bar colour (e.g. a land plot's own colour). */
+  accentColor?: string;
   wide?: boolean;
 }) {
   const bar = accent === 'project' ? 'bg-balcony' : accent === 'land' ? 'bg-ochre' : accent === 'draft' ? 'bg-signal' : 'bg-transparent';
   return (
     <section
-      className={`panel-enter pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[62dvh] flex-col overflow-hidden rounded-t-xl bg-white shadow-float md:inset-x-auto md:bottom-auto md:right-3 md:top-3 md:max-h-[calc(100%-1.5rem)] md:rounded-lg ${
+      className={`panel-enter pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[62vh] flex-col overflow-hidden rounded-t-xl bg-white shadow-float md:inset-x-auto md:bottom-auto md:right-3 md:top-3 md:max-h-[calc(100%-1.5rem)] md:rounded-lg ${
         wide ? 'md:w-[420px]' : 'md:w-[360px]'
       }`}
     >
-      <div className={`h-1 shrink-0 ${bar}`} />
+      <div className={`h-1 shrink-0 ${bar}`} style={accentColor ? { background: accentColor } : undefined} />
       {title !== undefined && (
         <header className="flex shrink-0 items-start justify-between gap-3 px-4 pb-2 pt-3">
           <h2 className="text-[15px] font-semibold leading-snug text-ink">{title}</h2>

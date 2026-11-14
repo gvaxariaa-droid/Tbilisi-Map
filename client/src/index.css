@@ -17,6 +17,45 @@
   }
 }
 
+/* Full-height app shell. 100vh first for browsers without dynamic viewport units. */
+.app-shell {
+  height: 100vh;
+  height: 100dvh;
+}
+
+/* Price / area tag on each land plot (HTML marker). */
+.land-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 2px 6px 3px;
+  border-radius: 4px;
+  border: 1.5px solid #b86a1e;
+  background: rgba(255, 255, 255, 0.94);
+  color: theme('colors.ink.DEFAULT');
+  font: 600 11px/1.15 theme('fontFamily.sans');
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(27, 40, 48, 0.25);
+}
+.land-label span { font-weight: 400; font-size: 10px; color: theme('colors.ink.soft'); }
+.land-label[data-color='red'] { border-color: #9e2a22; }
+.land-label[data-color='green'] { border-color: #22693c; }
+.land-label[data-selected='true'] { outline: 2px solid theme('colors.ink.DEFAULT'); outline-offset: 1px; }
+.land-label:hover { background: #fff; }
+
+.radius-label {
+  margin-bottom: 2px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: theme('colors.signal');
+  color: #fff;
+  font: 600 10.5px/1.4 theme('fontFamily.sans');
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 /* Panels and the toolbar answer a user action, so they get one short reveal. */
 @keyframes panel-in {
   from { opacity: 0; transform: translateY(6px); }

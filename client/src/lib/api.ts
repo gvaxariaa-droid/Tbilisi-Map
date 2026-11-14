@@ -47,6 +47,8 @@ export const api = {
   uploadProjectPhoto: (id: string, file: File) =>
     request<Project>(`/projects/${id}/photo`, { method: 'POST', form: one(file, 'photo') }),
   deleteProjectPhoto: (id: string) => request<Project>(`/projects/${id}/photo`, { method: 'DELETE' }),
+  deleteProjectPrice: (id: string, priceId: string) =>
+    request<Project>(`/projects/${id}/prices/${priceId}`, { method: 'DELETE' }),
 
   listLand: () => request<LandPlot[]>('/land'),
   createLand: (l: LandInput) => request<LandPlot>('/land', { method: 'POST', body: l }),

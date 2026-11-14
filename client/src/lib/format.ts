@@ -25,6 +25,21 @@ export function formatUsdPerM2(v: number | null | undefined): string {
   return v == null ? DASH : `${formatUsd(v)} / m²`;
 }
 
+/** $1,200 / m²  or  $1,000–1,500 / m² */
+export function formatPriceRange(min: number, max: number | null, perM2 = true): string {
+  const unit = perM2 ? ' / m²' : '';
+  if (max == null || max === min) return `${formatUsd(min)}${unit}`;
+  return `${formatUsd(min)}–${new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 }).format(max)}${unit}`;
+}
+
+/** Compact money for map labels: $550K, $1.25M */
+export function formatUsdShort(v: number | null | undefined): string {
+  if (v == null || !Number.isFinite(v)) return DASH;
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toLocaleString('en-US', { maximumFractionDigits: 2 })}M`;
+  if (v >= 10_000) return `$${Math.round(v / 1000).toLocaleString('en-US')}K`;
+  return formatUsd(v);
+}
+
 /** 12,400 m²; adds hectares from 1 ha upward: 12,400 m² (1.24 ha) */
 export function formatArea(v: number | null | undefined, withHectares = true): string {
   if (v == null || !Number.isFinite(v)) return DASH;

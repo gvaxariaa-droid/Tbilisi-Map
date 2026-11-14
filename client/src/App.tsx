@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import MapView, { type DrawState, type MapHandle } from './components/MapView.tsx';
+import MapView, { type DrawState, type LayerVisibility, type MapHandle } from './components/MapView.tsx';
 import Sidebar, { type Tab } from './components/Sidebar.tsx';
 import ProjectForm from './components/ProjectForm.tsx';
 import { ProjectCard, ProjectRecord } from './components/ProjectCard.tsx';
@@ -12,9 +12,11 @@ import { useAuth, useData, useToast } from './state/store.tsx';
 import { api } from './lib/api.ts';
 import { emptyLandFilters, emptyProjectFilters, filterLands, filterProjects } from './lib/filters.ts';
 import { fromPolygon } from './lib/geo.ts';
-import { formatCoords } from './lib/format.ts';
+import { DASH, formatCoords, formatUsdPerM2 } from './lib/format.ts';
+import { radiusStats } from './lib/prices.ts';
+import { FRAMES, frameLabel } from './lib/types.ts';
 import type { Basemap } from './lib/mapStyle.ts';
-import type { LandInput, LngLat, ProjectInput } from './lib/types.ts';
+import type { LandInput, LngLat, PriceEntry, ProjectInput } from './lib/types.ts';
 import type { SinglePhotoValue, MultiPhotoValue } from './components/PhotoFields.tsx';
 
 type Panel =
@@ -24,6 +26,20 @@ type Panel =
   | { kind: 'projectForm'; id?: string }
   | { kind: 'land'; id: string }
   | { kind: 'landForm'; id?: string };
+
+const RADII = [500, 1000, 2000];
+const radiusLabel = (m: number) => (m >= 1000 ? `${m / 1000} km` : `${m} m`);
+
+const LAYER_KEY = 'tpm.layers';
+const DEFAULT_LAYERS: LayerVisibility = { projects: true, territories: true, land: true, labels: true };
+function loadLayers(): LayerVisibility {
+  try {
+    const raw = localStorage.getItem(LAYER_KEY);
+    return raw ? { ...DEFAULT_LAYERS, ...JSON.parse(raw) } : DEFAULT_LAYERS;
+  } catch {
+    return DEFAULT_LAYERS;
+  }
+}
 
 const isTyping = (t: EventTarget | null) =>
   t instanceof HTMLElement && (t.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(t.tagName));
@@ -46,6 +62,18 @@ export default function App() {
   const [mobileMenu, setMobileMenu] = useState(false);
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [dialog, setDialog] = useState<'login' | 'users' | null>(null);
+  const [layers, setLayers] = useState<LayerVisibility>(loadLayers);
+  const [radii, setRadii] = useState<number[]>([]);
+  /** Territory of the project in the open form (committed when Done is pressed in the toolbar). */
+  const [formArea, setFormArea] = useState<LngLat[] | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LAYER_KEY, JSON.stringify(layers));
+    } catch {
+      /* storage unavailable: toggles still work for this visit */
+    }
+  }, [layers]);
 
   const visibleProjects = useMemo(() => filterProjects(data.projects, search, projectFilters), [data.projects, search, projectFilters]);
   const visibleLands = useMemo(() => filterLands(data.lands, search, landFilters), [data.lands, search, landFilters]);
@@ -95,6 +123,7 @@ export default function App() {
   /* --------------------------------------------------------------- projects */
   const startAddProject = () => {
     setDraw(null);
+    setFormArea(null);
     setPanel({ kind: 'projectForm' });
     setMobileMenu(false);
   };
@@ -103,6 +132,8 @@ export default function App() {
     const p = projectById(id);
     if (!p) return;
     setSelection([p.longitude, p.latitude]);
+    setDraw(null);
+    setFormArea(p.area ? fromPolygon(p.area) : null);
     setPanel({ kind: 'projectForm', id });
   };
 
@@ -119,6 +150,8 @@ export default function App() {
     }
     data.refreshStats();
     setSelection(null);
+    setFormArea(null);
+    setDraw(null);
     setPanel({ kind: 'project', id: saved.id });
   };
 
@@ -147,20 +180,53 @@ export default function App() {
   const startAddLand = () => {
     setPanel({ kind: 'none' });
     setSelection(null);
-    setDraw({ mode: 'draw', vertices: [], selected: null, history: [] });
+    setDraw({ target: 'land', mode: 'draw', vertices: [], selected: null, history: [] });
     setMobileMenu(false);
   };
 
+  const startDrawArea = () => {
+    setDraw({ target: 'project', mode: formArea ? 'edit' : 'draw', vertices: formArea ?? [], selected: null, history: [] });
+  };
+
+  const doneArea = () => {
+    if (draw && draw.vertices.length >= 3) setFormArea(draw.vertices);
+    setDraw(null);
+  };
+
+  const deletePrice = (projectId: string, e: PriceEntry) => {
+    setConfirm({
+      title: 'Remove price entry',
+      message: (
+        <>
+          Remove the {frameLabel(e.frame).toLowerCase()} price recorded for <strong className="text-ink">{e.date}</strong> from the
+          history? Use this only to correct a mistake.
+        </>
+      ),
+      confirmLabel: 'Remove entry',
+      onConfirm: async () => {
+        try {
+          data.upsertProject(await api.deleteProjectPrice(projectId, e.id));
+          data.refreshStats();
+          toast('Price entry removed');
+        } catch (err) {
+          toast((err as Error).message, 'error');
+        }
+      },
+    });
+  };
+
   const finishDrawing = useCallback(() => {
-    setDraw((d) => (d && d.vertices.length >= 3 ? { ...d, mode: 'edit', selected: null } : d));
-    setPanel((p) => (p.kind === 'landForm' ? p : { kind: 'landForm' }));
-  }, []);
+    if (!draw || draw.vertices.length < 3) return;
+    setDraw({ ...draw, mode: 'edit', selected: null });
+    // A land plot opens its form once closed; a project territory stays with the open project form.
+    if (draw.target === 'land') setPanel((p) => (p.kind === 'landForm' ? p : { kind: 'landForm' }));
+  }, [draw]);
 
   const editLand = (id: string) => {
     const l = landById(id);
     if (!l) return;
     const vertices = fromPolygon(l.geometry);
-    setDraw({ mode: 'edit', vertices, selected: null, history: [] });
+    setDraw({ target: 'land', mode: 'edit', vertices, selected: null, history: [] });
     setPanel({ kind: 'landForm', id });
     mapRef.current?.fitPolygon(vertices);
   };
@@ -169,6 +235,12 @@ export default function App() {
     setDraw(null);
     setPanel((p) => (p.kind === 'landForm' && p.id ? { kind: 'land', id: p.id } : { kind: 'none' }));
   }, []);
+
+  /** Esc / Cancel in the toolbar: a territory drawing returns to the form unchanged. */
+  const cancelDraw = useCallback(() => {
+    if (draw?.target === 'project') setDraw(null);
+    else cancelLand();
+  }, [draw, cancelLand]);
 
   const saveLand = async (input: LandInput, photos: MultiPhotoValue, id?: string) => {
     let saved = id ? await api.updateLand(id, input) : await api.createLand(input);
@@ -237,7 +309,7 @@ export default function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
         undo();
-      } else if (e.key === 'Escape' && !confirm && !dialog) cancelLand();
+      } else if (e.key === 'Escape' && !confirm && !dialog) cancelDraw();
       else if (e.key === 'Enter' && draw.mode === 'draw' && draw.vertices.length >= 3) finishDrawing();
       else if ((e.key === 'Delete' || e.key === 'Backspace') && draw.mode === 'edit') {
         e.preventDefault();
@@ -246,7 +318,7 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [draw, undo, removeVertex, cancelLand, finishDrawing, confirm, dialog]);
+  }, [draw, undo, removeVertex, cancelDraw, finishDrawing, confirm, dialog]);
 
   /* ------------------------------------------------------------------ view */
   const renderPanel = () => {
@@ -266,7 +338,15 @@ export default function App() {
       }
       case 'record': {
         const p = projectById(panel.id);
-        return p ? <ProjectRecord project={p} onBack={() => setPanel({ kind: 'project', id: p.id })} onClose={() => setPanel({ kind: 'none' })} /> : null;
+        return p ? (
+          <ProjectRecord
+            project={p}
+            isAdmin={isAdmin}
+            onBack={() => setPanel({ kind: 'project', id: p.id })}
+            onClose={() => setPanel({ kind: 'none' })}
+            onDeletePrice={(e) => deletePrice(p.id, e)}
+          />
+        ) : null;
       }
       case 'projectForm': {
         const p = panel.id ? projectById(panel.id) : undefined;
@@ -276,9 +356,15 @@ export default function App() {
             project={p}
             selection={selection}
             onCoordsChange={setSelection}
+            area={draw?.target === 'project' ? draw.vertices : formArea}
+            drawingArea={draw?.target === 'project'}
+            onDrawArea={startDrawArea}
+            onClearArea={() => setFormArea(null)}
             onSave={(input, photo) => saveProject(input, photo, panel.id)}
             onCancel={() => {
               setSelection(null);
+              setFormArea(null);
+              setDraw(null);
               setPanel(panel.id ? { kind: 'project', id: panel.id } : { kind: 'none' });
             }}
           />
@@ -299,7 +385,7 @@ export default function App() {
         ) : null;
       }
       case 'landForm':
-        return draw ? (
+        return draw?.target === 'land' ? (
           <LandForm
             key={panel.id ?? 'new'}
             land={panel.id ? landById(panel.id) : undefined}
@@ -316,7 +402,7 @@ export default function App() {
   const panelOpen = panel.kind !== 'none';
 
   return (
-    <div className="flex h-dvh w-screen overflow-hidden bg-paper text-ink">
+    <div className="app-shell flex w-full overflow-hidden bg-paper text-ink">
       <Sidebar
         tab={tab}
         onTab={setTab}
@@ -365,6 +451,10 @@ export default function App() {
           selectedLandId={selectedLandId}
           selection={draw ? null : selection}
           draw={draw}
+          formArea={panel.kind === 'projectForm' ? formArea : null}
+          editingProjectId={panel.kind === 'projectForm' ? (panel.id ?? null) : null}
+          layers={layers}
+          radius={selection && !draw && radii.length ? { center: selection, radii } : null}
           panelOpen={panelOpen}
           onMapClick={onMapClick}
           onProjectClick={(id) => openProject(id)}
@@ -398,29 +488,133 @@ export default function App() {
           </div>
         </div>
 
-        {/* Legend */}
-        <div className="pointer-events-none absolute bottom-9 left-3 z-10 hidden gap-3 rounded-md bg-white/90 px-2.5 py-1.5 text-[12px] text-ink-soft shadow-sm backdrop-blur sm:flex">
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-balcony ring-2 ring-white" />Project</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-3.5 rounded-sm border border-ochre-deep/60 bg-ochre/50" />Land plot</span>
-          <span className="flex items-center gap-1.5"><span className="h-2.5 w-2.5 rounded-full bg-signal ring-2 ring-white" />Selected point</span>
+        {/* Layer toggles (they also act as the legend) */}
+        <div className="pointer-events-auto absolute bottom-9 left-3 z-10 flex flex-wrap gap-1 rounded-md bg-white/95 p-1 text-[12px] shadow-sm backdrop-blur" role="group" aria-label="Map layers">
+          {(
+            [
+              ['projects', 'Projects', <span key="i" className="h-2.5 w-2.5 rounded-full bg-balcony ring-2 ring-white" />],
+              ['territories', 'Project areas', <span key="i" className="h-2.5 w-3.5 rounded-sm border border-balcony bg-balcony/25" />],
+              ['land', 'Land', <span key="i" className="h-2.5 w-3.5 rounded-sm border border-[#B86A1E] bg-[#F3A55B]/70" />],
+              ['labels', 'Land prices', <span key="i" className="rounded-sm bg-white px-0.5 text-[9px] font-semibold leading-none text-ink ring-1 ring-line">$</span>],
+            ] as const
+          ).map(([key, label, icon]) => {
+            const on = layers[key];
+            const disabled = key === 'labels' && !layers.land;
+            return (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={on}
+                disabled={disabled}
+                onClick={() => setLayers((l) => ({ ...l, [key]: !l[key] }))}
+                className={`flex items-center gap-1.5 rounded px-2 py-1 ${on && !disabled ? 'text-ink' : 'text-ink-faint line-through decoration-ink-faint/60'} hover:bg-paper disabled:cursor-not-allowed`}
+                title={on ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+              >
+                <span className={on && !disabled ? '' : 'opacity-40'}>{icon}</span>
+                {label}
+              </button>
+            );
+          })}
         </div>
 
-        {/* Selected point chip (ordinary map click) */}
+        {/* Selected point: coordinates, radius circles and nearby price averages */}
         {selection && !draw && panel.kind !== 'projectForm' && (
-          <div className="panel-enter pointer-events-auto absolute bottom-16 left-1/2 z-10 flex -translate-x-1/2 items-center gap-2 rounded-full bg-white py-1 pl-3 pr-1 text-[12.5px] shadow-float md:bottom-9">
-            <span className="tabular-nums text-ink">{formatCoords(selection[1], selection[0])}</span>
-            {isAdmin && (
-              <button type="button" className="rounded-full bg-ink px-2.5 py-1 text-white hover:bg-ink/90" onClick={startAddProject}>
-                Add project here
-              </button>
+          <div className="panel-enter pointer-events-auto absolute bottom-[4.5rem] left-1/2 z-10 w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-lg bg-white px-3 py-2 text-[12.5px] shadow-float md:bottom-[5.5rem]">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+              <span className="flex items-center gap-1.5 tabular-nums text-ink">
+                <span className="h-2.5 w-2.5 rounded-full bg-signal ring-2 ring-white" />
+                {formatCoords(selection[1], selection[0])}
+              </span>
+              <span className="ml-auto flex gap-1">
+                {isAdmin && (
+                  <button type="button" className="rounded-full bg-ink px-2.5 py-1 text-white hover:bg-ink/90" onClick={startAddProject}>
+                    Add project here
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="rounded-full px-2 py-1 text-ink-soft hover:bg-paper"
+                  onClick={() => {
+                    setSelection(null);
+                    setRadii([]);
+                  }}
+                >
+                  Clear
+                </button>
+              </span>
+            </div>
+            <div className="mt-1.5 flex items-center gap-1.5 border-t border-line pt-1.5">
+              <span className="text-ink-soft">Radius</span>
+              {RADII.map((m) => {
+                const on = radii.includes(m);
+                return (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => setRadii((r) => (on ? r.filter((x) => x !== m) : [...r, m].sort((a, b) => a - b)))}
+                    className={`rounded-full px-2.5 py-0.5 ring-1 ring-inset ${on ? 'bg-signal text-white ring-signal' : 'text-ink-soft ring-line hover:text-ink'}`}
+                  >
+                    {radiusLabel(m)}
+                  </button>
+                );
+              })}
+            </div>
+            {radii.length > 0 && (
+              <div className="mt-1.5 overflow-x-auto">
+                <table className="w-full text-right tabular-nums">
+                  <thead className="text-[11px] text-ink-faint">
+                    <tr>
+                      <th className="py-1 pr-2 text-left font-normal">Within</th>
+                      <th className="py-1 pr-2 font-normal">Projects</th>
+                      {FRAMES.map((f) => (
+                        <th key={f.value} className="py-1 pr-2 font-normal">
+                          <span className="inline-flex items-center gap-1">
+                            <span className="h-2 w-2 rounded-sm ring-1 ring-ink/25" style={{ background: f.swatch }} />
+                            {f.label.replace(' frame', '')}
+                          </span>
+                        </th>
+                      ))}
+                      <th className="py-1 font-normal">All</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-line">
+                    {radii.map((m) => {
+                      const st = radiusStats(selection, m, visibleProjects);
+                      const cell = (v: number | null) => (v != null ? formatUsdPerM2(Math.round(v)).replace(' / m²', '') : DASH);
+                      return (
+                        <tr key={m} className="text-ink">
+                          <td className="py-1 pr-2 text-left">{radiusLabel(m)}</td>
+                          <td className="py-1 pr-2">{st.projectCount}</td>
+                          {FRAMES.map((f) => (
+                            <td key={f.value} className="py-1 pr-2" title={`${st.byFrame[f.value].n} projects with a ${f.label.toLowerCase()} price`}>
+                              {cell(st.byFrame[f.value].avg)}
+                            </td>
+                          ))}
+                          <td className="py-1 font-semibold">{cell(st.overall)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+                <p className="mt-1 text-[11px] text-ink-faint">
+                  Average current price per m² of the projects shown on the map. Ranges count as their midpoint.
+                </p>
+              </div>
             )}
-            <button type="button" aria-label="Clear selected point" className="rounded-full px-2 py-1 text-ink-soft hover:bg-paper" onClick={() => setSelection(null)}>
-              Clear
-            </button>
           </div>
         )}
 
-        {draw && <DrawToolbar draw={draw} onUndo={undo} onFinish={finishDrawing} onRemoveVertex={removeVertex} onCancel={cancelLand} />}
+        {draw && (
+          <DrawToolbar
+            draw={draw}
+            onUndo={undo}
+            onFinish={finishDrawing}
+            onRemoveVertex={removeVertex}
+            onCancel={cancelDraw}
+            onDone={draw.target === 'project' ? doneArea : undefined}
+          />
+        )}
 
         {renderPanel()}
       </main>

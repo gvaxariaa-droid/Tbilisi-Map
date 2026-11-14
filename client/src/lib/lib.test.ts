@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import { derivePrices, fromPolygon, ringArea, selfIntersects, toPolygon } from './geo.ts';
 import { formatArea, formatCoords, formatDate, formatUsd, formatUsdPerM2, parseAmount } from './format.ts';
 import { emptyLandFilters, emptyProjectFilters, filterLands, filterProjects } from './filters.ts';
-import type { LandPlot, LngLat, Project } from './types.ts';
+import type { Frame, LandPlot, LngLat, PriceEntry, Project } from './types.ts';
+import { circleRing, currentPrices, distanceM, priceSpan, radiusStats } from './prices.ts';
+import { formatPriceRange, formatUsdShort } from './format.ts';
 
 test('ringArea: 100 m × 100 m square in Tbilisi ≈ 10,000 m²', () => {
   const lat0 = 41.7151;
@@ -80,17 +82,20 @@ test('parseAmount accepts common typing and rejects junk', () => {
   assert.ok(Number.isNaN(parseAmount('-5') as number));
 });
 
+const pe = (frame: Frame, min: number, max: number | null = null, date = '2026-01-01', id = `${frame}${min}`): PriceEntry =>
+  ({ id, frame, min, max, date, created_at: `${date}T00:00:00Z` });
+
 const proj = (o: Partial<Project>): Project => ({
-  id: 'x', name: 'P', developer: 'D', architect: null, construction_stage: 'planning', price_per_m2_usd: null,
+  id: 'x', name: 'P', developer: 'D', architect: null, construction_stage: 'planning', price_history: [], area: null, area_m2: null,
   handover_date: null, latitude: 41.7, longitude: 44.8, description: null, photo_id: null,
   created_at: '2026-01-01', updated_at: '2026-01-01', ...o,
 });
 
 test('filterProjects: search, stage, developer and price range', () => {
   const list = [
-    proj({ id: 'a', name: 'Vake Park Residence', developer: 'Archi', construction_stage: 'facade', price_per_m2_usd: 1400 }),
-    proj({ id: 'b', name: 'Saburtalo Tower', developer: 'Alliance', construction_stage: 'completed', price_per_m2_usd: 950 }),
-    proj({ id: 'c', name: 'Old Town Lofts', developer: 'Archi', construction_stage: 'planning', price_per_m2_usd: null }),
+    proj({ id: 'a', name: 'Vake Park Residence', developer: 'Archi', construction_stage: 'facade', price_history: [pe('white', 1400)] }),
+    proj({ id: 'b', name: 'Saburtalo Tower', developer: 'Alliance', construction_stage: 'completed', price_history: [pe('black', 800, 950)] }),
+    proj({ id: 'c', name: 'Old Town Lofts', developer: 'Archi', construction_stage: 'planning' }),
   ];
   const ids = (l: Project[]) => l.map((p) => p.id);
   assert.deepEqual(ids(filterProjects(list, 'vake', emptyProjectFilters)), ['a']);
@@ -98,11 +103,14 @@ test('filterProjects: search, stage, developer and price range', () => {
   assert.deepEqual(ids(filterProjects(list, '', { ...emptyProjectFilters, developer: 'Archi' })), ['a', 'c']);
   assert.deepEqual(ids(filterProjects(list, '', { ...emptyProjectFilters, stages: ['completed'] })), ['b']);
   assert.deepEqual(ids(filterProjects(list, '', { ...emptyProjectFilters, minPrice: '1000' })), ['a']);
+  // a range overlapping the filter counts
+  assert.deepEqual(ids(filterProjects(list, '', { ...emptyProjectFilters, minPrice: '900', maxPrice: '1000' })), ['b']);
 });
 
 const land = (o: Partial<LandPlot>): LandPlot => ({
   id: 'x', name: 'L', geometry: toPolygon([[0, 0], [1, 0], [1, 1]]), area_m2: 1000, area_is_manual: false,
   computed_area_m2: 1000, total_price_usd: null, price_per_m2_usd: null, k2_coefficient: null, notes: null,
+  color: 'orange', cadastral_code: null,
   photo_ids: [], created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', ...o,
 });
 
@@ -121,4 +129,45 @@ test('filterLands: owner/agent search, ranges and sorting', () => {
   assert.deepEqual(ids(filterLands(list, '', { ...emptyLandFilters, minK2: '2' })), ['a']);
   assert.deepEqual(ids(filterLands(list, '', { ...emptyLandFilters, sort: 'price_desc' })), ['a', 'b', 'c']);
   assert.deepEqual(ids(filterLands(list, '', { ...emptyLandFilters, sort: 'area_asc' })), ['b', 'a', 'c']);
+  const withCode = [land({ id: 'k', cadastral_code: '01.72.14.009.012' })];
+  assert.deepEqual(ids(filterLands(withCode, '72.14', emptyLandFilters)), ['k']);
+});
+
+test('price history: newest entry per frame is current; old entries kept', () => {
+  const p = proj({
+    price_history: [
+      pe('white', 1500, null, '2026-10-01', 'w2'),
+      pe('white', 1200, null, '2025-06-01', 'w1'),
+      pe('black', 900, 1100, '2026-02-01', 'b1'),
+    ],
+  });
+  const cur = currentPrices(p);
+  assert.equal(cur.white?.id, 'w2');
+  assert.equal(cur.black?.id, 'b1');
+  assert.equal(cur.green, undefined);
+  assert.deepEqual(priceSpan(p), { lo: 900, hi: 1500 });
+  assert.equal(formatPriceRange(1000, 1500), '$1,000–1,500 / m²');
+  assert.equal(formatPriceRange(1200, null), '$1,200 / m²');
+  assert.equal(formatUsdShort(550_000), '$550K');
+  assert.equal(formatUsdShort(1_250_000), '$1.25M');
+});
+
+test('radius: distances, circle ring and per-frame averages', () => {
+  const c: LngLat = [44.79, 41.715];
+  assert.ok(Math.abs(distanceM(c, [44.79, 41.715 + 0.009]) - 1000) < 5); // 0.009° lat ≈ 1 km
+  const ring = circleRing(c, 500);
+  ring.slice(0, -1).forEach((pt) => assert.ok(Math.abs(distanceM(c, pt) - 500) < 1));
+  const near = proj({ id: 'n', latitude: 41.716, longitude: 44.79, price_history: [pe('white', 1000), pe('black', 600, 800)] });
+  const mid = proj({ id: 'm', latitude: 41.7215, longitude: 44.79, price_history: [pe('white', 1400)] });
+  const far = proj({ id: 'f', latitude: 41.75, longitude: 44.79, price_history: [pe('white', 3000)] });
+  const r500 = radiusStats(c, 500, [near, mid, far]);
+  assert.equal(r500.projectCount, 1);
+  assert.equal(r500.byFrame.white.avg, 1000);
+  assert.equal(r500.byFrame.black.avg, 700); // range counts as its midpoint
+  assert.equal(r500.byFrame.green.avg, null);
+  assert.equal(r500.overall, 850);
+  const r1k = radiusStats(c, 1000, [near, mid, far]);
+  assert.equal(r1k.projectCount, 2);
+  assert.equal(r1k.byFrame.white.avg, 1200);
+  assert.equal(r1k.byFrame.white.n, 2);
 });

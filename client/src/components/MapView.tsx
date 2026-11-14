@@ -1,5 +1,7 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from 'react';
 import maplibregl, {
+  type ExpressionSpecification,
+  type Marker,
   type GeoJSONSource,
   type Map as MlMap,
   type MapLayerMouseEvent,
@@ -13,7 +15,10 @@ type Box = [[number, number], [number, number]];
 import 'maplibre-gl/dist/maplibre-gl.css';
 import type { LandPlot, LngLat, Project } from '../lib/types.ts';
 import { BASEMAP_LAYERS, buildStyle, TBILISI_CENTER, type Basemap } from '../lib/mapStyle.ts';
-import { boundsOf, midpoint } from '../lib/geo.ts';
+import { boundsOf, fromPolygon, midpoint } from '../lib/geo.ts';
+import { circleRing } from '../lib/prices.ts';
+import { formatArea, formatUsdShort } from '../lib/format.ts';
+import { LAND_COLORS } from '../lib/types.ts';
 
 /**
  * Drawing state, owned by App so the toolbar and the land form share it.
@@ -21,10 +26,24 @@ import { boundsOf, midpoint } from '../lib/geo.ts';
  *   edit: closed shape; drag corners, drag/click edge midpoints to add corners, click a corner to select it
  */
 export interface DrawState {
+  /** What the shape is for: a land plot, or a project's territory. */
+  target: 'land' | 'project';
   mode: 'draw' | 'edit';
   vertices: LngLat[];
   selected: number | null;
   history: LngLat[][];
+}
+
+export interface LayerVisibility {
+  projects: boolean;
+  territories: boolean;
+  land: boolean;
+  labels: boolean;
+}
+
+export interface RadiusView {
+  center: LngLat;
+  radii: number[]; // metres
 }
 
 export interface MapHandle {
@@ -40,6 +59,12 @@ interface Props {
   selectedLandId: string | null;
   selection: LngLat | null;
   draw: DrawState | null;
+  /** Territory of the project being edited, shown while not actively drawing. */
+  formArea: LngLat[] | null;
+  /** Saved territory to hide while its project is being edited. */
+  editingProjectId: string | null;
+  layers: LayerVisibility;
+  radius: RadiusView | null;
   /** Extra right padding when fitting bounds so a side panel does not cover the target. */
   panelOpen: boolean;
   onMapClick(p: LngLat): void;
@@ -52,8 +77,32 @@ interface Props {
 type Fc = GeoJSON.FeatureCollection;
 const EMPTY: Fc = { type: 'FeatureCollection', features: [] };
 const PROJECT_COLOR = '#1F5FA8';
-const LAND_COLOR = '#D99A1E';
-const LAND_DEEP = '#8A5A0E';
+const LAND_FILL: ExpressionSpecification = [
+  'match', ['get', 'color'],
+  ...LAND_COLORS.flatMap((c) => [c.value, c.fill]),
+  LAND_COLORS[0].fill,
+] as unknown as ExpressionSpecification;
+const LAND_LINE: ExpressionSpecification = [
+  'match', ['get', 'color'],
+  ...LAND_COLORS.flatMap((c) => [c.value, c.line]),
+  LAND_COLORS[0].line,
+] as unknown as ExpressionSpecification;
+const LABEL_MIN_ZOOM = 14;
+
+/** Area-weighted centroid of a ring (falls back to the vertex average for degenerate rings). */
+function centroid(v: LngLat[]): LngLat {
+  let a = 0, x = 0, y = 0;
+  for (let i = 0; i < v.length; i++) {
+    const [x0, y0] = v[i];
+    const [x1, y1] = v[(i + 1) % v.length];
+    const f = x0 * y1 - x1 * y0;
+    a += f; x += (x0 + x1) * f; y += (y0 + y1) * f;
+  }
+  if (Math.abs(a) < 1e-14) return [v.reduce((s, p) => s + p[0], 0) / v.length, v.reduce((s, p) => s + p[1], 0) / v.length];
+  return [x / (3 * a), y / (3 * a)];
+}
+
+const radiusLabel = (m: number) => (m >= 1000 ? `${m / 1000} km` : `${m} m`);
 const SIGNAL = '#E0362C';
 const DRAFT = '#E0362C';
 
@@ -101,6 +150,49 @@ function draftData(draw: DrawState | null, vertices: LngLat[] | null, cursor: Ln
 
 function addLayers(map: MlMap) {
   map.addSource('lands', { type: 'geojson', data: EMPTY });
+  map.addSource('areas', { type: 'geojson', data: EMPTY });
+  map.addSource('form-area', { type: 'geojson', data: EMPTY });
+  map.addSource('radius', { type: 'geojson', data: EMPTY });
+
+  // Radius circles around the selected point (drawn first, under everything else).
+  map.addLayer({
+    id: 'radius-fill',
+    type: 'fill',
+    source: 'radius',
+    paint: { 'fill-color': '#E0362C', 'fill-opacity': 0.05 },
+  });
+  map.addLayer({
+    id: 'radius-line',
+    type: 'line',
+    source: 'radius',
+    paint: { 'line-color': '#E0362C', 'line-width': 1.75, 'line-dasharray': [3, 2], 'line-opacity': 0.9 },
+  });
+
+  // Project territories: light blue areas, below land plots.
+  map.addLayer({
+    id: 'areas-fill',
+    type: 'fill',
+    source: 'areas',
+    paint: { 'fill-color': PROJECT_COLOR, 'fill-opacity': ['case', ['get', 'selected'], 0.32, 0.18] },
+  });
+  map.addLayer({
+    id: 'areas-line',
+    type: 'line',
+    source: 'areas',
+    paint: { 'line-color': PROJECT_COLOR, 'line-width': ['case', ['get', 'selected'], 2.5, 1.5] },
+  });
+  map.addLayer({
+    id: 'form-area-fill',
+    type: 'fill',
+    source: 'form-area',
+    paint: { 'fill-color': PROJECT_COLOR, 'fill-opacity': 0.22 },
+  });
+  map.addLayer({
+    id: 'form-area-line',
+    type: 'line',
+    source: 'form-area',
+    paint: { 'line-color': PROJECT_COLOR, 'line-width': 2, 'line-dasharray': [2, 1.5] },
+  });
   map.addSource('projects', { type: 'geojson', data: EMPTY });
   map.addSource('selection', { type: 'geojson', data: EMPTY });
   map.addSource('draft', { type: 'geojson', data: EMPTY });
@@ -110,7 +202,7 @@ function addLayers(map: MlMap) {
     id: 'lands-fill',
     type: 'fill',
     source: 'lands',
-    paint: { 'fill-color': LAND_COLOR, 'fill-opacity': ['case', ['get', 'selected'], 0.5, 0.3] },
+    paint: { 'fill-color': LAND_FILL, 'fill-opacity': ['case', ['get', 'selected'], 0.55, 0.38] },
   });
   map.addLayer({
     id: 'lands-casing',
@@ -124,7 +216,7 @@ function addLayers(map: MlMap) {
     type: 'line',
     source: 'lands',
     paint: {
-      'line-color': ['case', ['get', 'selected'], LAND_DEEP, LAND_COLOR],
+      'line-color': LAND_LINE,
       'line-width': ['case', ['get', 'selected'], 2.5, 1.75],
     },
   });
@@ -370,6 +462,8 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
       if (project) return P.onProjectClick(String(project.properties?.id));
       const land = map.queryRenderedFeatures(e.point, { layers: ['lands-fill'] })[0];
       if (land) return P.onLandClick(String(land.properties?.id));
+      const area = map.queryRenderedFeatures(e.point, { layers: ['areas-fill'] })[0];
+      if (area) return P.onProjectClick(String(area.properties?.id));
       P.onMapClick(toLngLat(e));
     };
 
@@ -379,7 +473,7 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
       map.on('touchstart', 'draft-vertices', pressVertex);
       map.on('mousedown', 'draft-midpoints', pressMidpoint);
       map.on('touchstart', 'draft-midpoints', pressMidpoint);
-      for (const layer of ['projects-circle', 'lands-fill', 'draft-vertices', 'draft-midpoints']) {
+      for (const layer of ['projects-circle', 'lands-fill', 'areas-fill', 'draft-vertices', 'draft-midpoints']) {
         map.on('mouseenter', layer, () => {
           if (dragRef.current) return;
           const drawing = latestDraw.current;
@@ -439,11 +533,116 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
 
   useEffect(() => {
     if (!ready) return;
+    setSource('areas', {
+      type: 'FeatureCollection',
+      features: props.projects
+        .filter((p) => p.area && p.id !== props.editingProjectId)
+        .map((p) => ({
+          type: 'Feature',
+          properties: { id: p.id, selected: p.id === props.selectedProjectId },
+          geometry: p.area!,
+        })),
+    });
+  }, [ready, props.projects, props.selectedProjectId, props.editingProjectId]);
+
+  useEffect(() => {
+    if (!ready) return;
+    const v = props.draw?.target === 'project' ? null : props.formArea;
+    setSource(
+      'form-area',
+      v && v.length >= 3
+        ? { type: 'FeatureCollection', features: [{ type: 'Feature', properties: {}, geometry: { type: 'Polygon', coordinates: [[...v, v[0]]] } }] }
+        : EMPTY,
+    );
+  }, [ready, props.formArea, props.draw]);
+
+  // Radius circles + their distance labels.
+  const radiusMarkers = useRef<Marker[]>([]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    radiusMarkers.current.forEach((m) => m.remove());
+    radiusMarkers.current = [];
+    const r = props.radius;
+    if (!r || !r.radii.length) return setSource('radius', EMPTY);
+    const sorted = [...r.radii].sort((a, b) => b - a);
+    setSource('radius', {
+      type: 'FeatureCollection',
+      features: sorted.map((m) => ({
+        type: 'Feature',
+        properties: { radius: m },
+        geometry: { type: 'Polygon', coordinates: [circleRing(r.center, m)] },
+      })),
+    });
+    for (const m of sorted) {
+      const north = circleRing(r.center, m, 4)[0]; // first step is due north
+      const el = document.createElement('div');
+      el.className = 'radius-label';
+      el.textContent = radiusLabel(m);
+      radiusMarkers.current.push(new maplibregl.Marker({ element: el, anchor: 'bottom' }).setLngLat(north).addTo(map));
+    }
+  }, [ready, props.radius]);
+
+  // Small price / area labels on land plots (HTML markers, so no font server is needed).
+  const landMarkers = useRef<Marker[]>([]);
+  const [zoom, setZoom] = useState(12);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const onZoom = () => setZoom(Math.floor(map.getZoom() * 2) / 2);
+    map.on('zoomend', onZoom);
+    onZoom();
+    return () => {
+      map.off('zoomend', onZoom);
+    };
+  }, [ready]);
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    landMarkers.current.forEach((m) => m.remove());
+    landMarkers.current = [];
+    if (!props.layers.land || !props.layers.labels || zoom < LABEL_MIN_ZOOM) return;
+    for (const l of props.lands) {
+      const el = document.createElement('button');
+      el.type = 'button';
+      el.className = 'land-label';
+      el.dataset.color = l.color;
+      if (l.id === props.selectedLandId) el.dataset.selected = 'true';
+      const price = document.createElement('strong');
+      price.textContent = l.total_price_usd != null ? formatUsdShort(l.total_price_usd) : 'No price';
+      const area = document.createElement('span');
+      area.textContent = formatArea(l.area_m2, false);
+      el.append(price, area);
+      el.title = l.name;
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (!latestDraw.current) propsRef.current.onLandClick(l.id);
+      });
+      landMarkers.current.push(
+        new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(centroid(fromPolygon(l.geometry))).addTo(map),
+      );
+    }
+  }, [ready, props.lands, props.selectedLandId, props.layers.land, props.layers.labels, zoom]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!ready || !map) return;
+    const vis = (on: boolean) => (on ? 'visible' : 'none');
+    const groups: [boolean, string[]][] = [
+      [props.layers.projects, ['projects-halo', 'projects-circle']],
+      [props.layers.territories, ['areas-fill', 'areas-line']],
+      [props.layers.land, ['lands-fill', 'lands-casing', 'lands-line']],
+    ];
+    for (const [on, ids] of groups) for (const id of ids) if (map.getLayer(id)) map.setLayoutProperty(id, 'visibility', vis(on));
+  }, [ready, props.layers]);
+
+  useEffect(() => {
+    if (!ready) return;
     setSource('lands', {
       type: 'FeatureCollection',
       features: props.lands.map((l) => ({
         type: 'Feature',
-        properties: { id: l.id, selected: l.id === props.selectedLandId },
+        properties: { id: l.id, selected: l.id === props.selectedLandId, color: l.color },
         geometry: l.geometry,
       })),
     });

@@ -25,8 +25,11 @@ test('reconcilePrices keeps both when both are given, and ignores zero area', ()
 test('projectSchema accepts a valid project and normalises empty optionals', () => {
   const p = projectSchema.parse({
     name: ' Vake Residence ', developer: 'Acme', architect: '', construction_stage: 'facade',
-    price_per_m2_usd: 1400, handover_date: '', latitude: 41.71, longitude: 44.75, description: '',
+    prices: [{ frame: 'white', min: 1400 }, { frame: 'black', min: 900, max: 1100 }],
+    handover_date: '', latitude: 41.71, longitude: 44.75, description: '',
   });
+  assert.deepEqual(p.prices, [{ frame: 'white', min: 1400, max: null }, { frame: 'black', min: 900, max: 1100 }]);
+  assert.equal(p.area, null);
   assert.equal(p.name, 'Vake Residence');
   assert.equal(p.architect, null);
   assert.equal(p.handover_date, null);
@@ -37,7 +40,21 @@ test('projectSchema rejects bad stage, coordinates and negative price', () => {
   const base = { name: 'x', developer: 'y', construction_stage: 'planning', latitude: 41, longitude: 44 };
   assert.throws(() => projectSchema.parse({ ...base, construction_stage: 'demolished' }));
   assert.throws(() => projectSchema.parse({ ...base, latitude: 91 }));
-  assert.throws(() => projectSchema.parse({ ...base, price_per_m2_usd: -1 }));
+  assert.throws(() => projectSchema.parse({ ...base, prices: [{ frame: 'white', min: -1 }] }));
+  assert.throws(() => projectSchema.parse({ ...base, prices: [{ frame: 'white', min: 1500, max: 1000 }] }));
+  assert.throws(() => projectSchema.parse({ ...base, prices: [{ frame: 'white', min: 1 }, { frame: 'white', min: 2 }] }));
+  assert.throws(() => projectSchema.parse({ ...base, prices: [{ frame: 'grey', min: 1 }] }));
+  // equal bounds collapse to a single price
+  assert.equal(projectSchema.parse({ ...base, prices: [{ frame: 'green', min: 1200, max: 1200 }] }).prices[0].max, null);
+});
+
+test('landSchema accepts colour and cadastral code', () => {
+  const l = landSchema.parse({ name: 'P', geometry: square, color: 'green', cadastral_code: ' 01.72.14.009.012 ' });
+  assert.equal(l.color, 'green');
+  assert.equal(l.cadastral_code, '01.72.14.009.012');
+  assert.equal(landSchema.parse({ name: 'P', geometry: square }).color, 'orange');
+  assert.throws(() => landSchema.parse({ name: 'P', geometry: square, color: 'purple' }));
+  assert.throws(() => landSchema.parse({ name: 'P', geometry: square, cadastral_code: '<b>' }));
 });
 
 test('landSchema requires a closed single-ring polygon', () => {
