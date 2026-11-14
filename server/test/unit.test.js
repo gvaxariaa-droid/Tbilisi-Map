@@ -24,11 +24,15 @@ test('reconcilePrices keeps both when both are given, and ignores zero area', ()
 
 test('projectSchema accepts a valid project and normalises empty optionals', () => {
   const p = projectSchema.parse({
-    name: ' Vake Residence ', developer: 'Acme', architect: '', construction_stage: 'facade',
-    prices: [{ frame: 'white', min: 1400 }, { frame: 'black', min: 900, max: 1100 }],
+    name: ' Vake Residence ', developer: 'Acme', architect: '', construction_stage: 'facade_works',
+    price_history: [{ frame: 'white', min: 1400, date: '2026-01-10' }, { frame: 'black', min: 900, max: 1100, date: '2025-05-01' }],
     handover_date: '', latitude: 41.71, longitude: 44.75, description: '',
   });
-  assert.deepEqual(p.prices, [{ frame: 'white', min: 1400, max: null }, { frame: 'black', min: 900, max: 1100 }]);
+  assert.deepEqual(p.price_history, [
+    { frame: 'white', min: 1400, max: null, date: '2026-01-10' },
+    { frame: 'black', min: 900, max: 1100, date: '2025-05-01' },
+  ]);
+  assert.equal(p.color, 'blue');
   assert.equal(p.area, null);
   assert.equal(p.name, 'Vake Residence');
   assert.equal(p.architect, null);
@@ -37,15 +41,21 @@ test('projectSchema accepts a valid project and normalises empty optionals', () 
 });
 
 test('projectSchema rejects bad stage, coordinates and negative price', () => {
-  const base = { name: 'x', developer: 'y', construction_stage: 'planning', latitude: 41, longitude: 44 };
+  const base = { name: 'x', developer: 'y', construction_stage: 'design', latitude: 41, longitude: 44 };
+  const pe = (o) => ({ frame: 'white', min: 1, date: '2026-01-01', ...o });
+  assert.throws(() => projectSchema.parse({ ...base, construction_stage: 'planning' })); // old stage name
+  assert.throws(() => projectSchema.parse({ ...base, color: 'purple' }));
+  assert.throws(() => projectSchema.parse({ ...base, price_history: [pe({ date: '14/11/2026' })] }));
+  assert.throws(() => projectSchema.parse({ ...base, price_history: [pe({ id: 'not-a-uuid' })] }));
+  // the same frame may appear many times in a history
+  assert.equal(projectSchema.parse({ ...base, price_history: [pe({}), pe({ min: 2 })] }).price_history.length, 2);
   assert.throws(() => projectSchema.parse({ ...base, construction_stage: 'demolished' }));
   assert.throws(() => projectSchema.parse({ ...base, latitude: 91 }));
-  assert.throws(() => projectSchema.parse({ ...base, prices: [{ frame: 'white', min: -1 }] }));
-  assert.throws(() => projectSchema.parse({ ...base, prices: [{ frame: 'white', min: 1500, max: 1000 }] }));
-  assert.throws(() => projectSchema.parse({ ...base, prices: [{ frame: 'white', min: 1 }, { frame: 'white', min: 2 }] }));
-  assert.throws(() => projectSchema.parse({ ...base, prices: [{ frame: 'grey', min: 1 }] }));
+  assert.throws(() => projectSchema.parse({ ...base, price_history: [pe({ min: -1 })] }));
+  assert.throws(() => projectSchema.parse({ ...base, price_history: [pe({ min: 1500, max: 1000 })] }));
+  assert.throws(() => projectSchema.parse({ ...base, price_history: [pe({ frame: 'grey' })] }));
   // equal bounds collapse to a single price
-  assert.equal(projectSchema.parse({ ...base, prices: [{ frame: 'green', min: 1200, max: 1200 }] }).prices[0].max, null);
+  assert.equal(projectSchema.parse({ ...base, price_history: [pe({ min: 1200, max: 1200 })] }).price_history[0].max, null);
 });
 
 test('landSchema accepts colour and cadastral code', () => {

@@ -18,7 +18,8 @@ import { BASEMAP_LAYERS, buildStyle, TBILISI_CENTER, type Basemap } from '../lib
 import { boundsOf, fromPolygon, midpoint } from '../lib/geo.ts';
 import { circleRing } from '../lib/prices.ts';
 import { formatArea, formatUsdShort } from '../lib/format.ts';
-import { LAND_COLORS } from '../lib/types.ts';
+import { LAND_COLORS, PROJECT_COLORS } from '../lib/types.ts';
+import { useI18n } from '../lib/i18n.tsx';
 
 /**
  * Drawing state, owned by App so the toolbar and the land form share it.
@@ -86,6 +87,16 @@ const LAND_LINE: ExpressionSpecification = [
   'match', ['get', 'color'],
   ...LAND_COLORS.flatMap((c) => [c.value, c.line]),
   LAND_COLORS[0].line,
+] as unknown as ExpressionSpecification;
+const PROJECT_PIN: ExpressionSpecification = [
+  'match', ['get', 'color'],
+  ...PROJECT_COLORS.flatMap((c) => [c.value, c.pin]),
+  PROJECT_COLORS[0].pin,
+] as unknown as ExpressionSpecification;
+const PROJECT_DEEP: ExpressionSpecification = [
+  'match', ['get', 'color'],
+  ...PROJECT_COLORS.flatMap((c) => [c.value, c.deep]),
+  PROJECT_COLORS[0].deep,
 ] as unknown as ExpressionSpecification;
 const LABEL_MIN_ZOOM = 14;
 
@@ -173,13 +184,13 @@ function addLayers(map: MlMap) {
     id: 'areas-fill',
     type: 'fill',
     source: 'areas',
-    paint: { 'fill-color': PROJECT_COLOR, 'fill-opacity': ['case', ['get', 'selected'], 0.32, 0.18] },
+    paint: { 'fill-color': PROJECT_PIN, 'fill-opacity': ['case', ['get', 'selected'], 0.32, 0.18] },
   });
   map.addLayer({
     id: 'areas-line',
     type: 'line',
     source: 'areas',
-    paint: { 'line-color': PROJECT_COLOR, 'line-width': ['case', ['get', 'selected'], 2.5, 1.5] },
+    paint: { 'line-color': PROJECT_PIN, 'line-width': ['case', ['get', 'selected'], 2.5, 1.5] },
   });
   map.addLayer({
     id: 'form-area-fill',
@@ -229,8 +240,8 @@ function addLayers(map: MlMap) {
     filter: ['==', ['get', 'selected'], true],
     paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 11, 16, 17],
-      'circle-color': PROJECT_COLOR,
-      'circle-opacity': 0.22,
+      'circle-color': PROJECT_PIN,
+      'circle-opacity': 0.25,
     },
   });
   map.addLayer({
@@ -239,7 +250,7 @@ function addLayers(map: MlMap) {
     source: 'projects',
     paint: {
       'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, ['case', ['get', 'selected'], 6.5, 5], 16, ['case', ['get', 'selected'], 11, 9]],
-      'circle-color': ['case', ['get', 'selected'], '#163F70', PROJECT_COLOR],
+      'circle-color': ['case', ['get', 'selected'], PROJECT_DEEP, PROJECT_PIN],
       'circle-stroke-color': '#ffffff',
       'circle-stroke-width': 2,
     },
@@ -328,6 +339,7 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
     propsRef.current.onDrawChange(next);
   };
   const [ready, setReady] = useState(false);
+  const { t } = useI18n();
   const [loadError, setLoadError] = useState<string | null>(null);
 
   // Live-drag state is kept out of React so dragging stays at frame rate.
@@ -525,7 +537,7 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
       type: 'FeatureCollection',
       features: props.projects.map((p) => ({
         type: 'Feature',
-        properties: { id: p.id, selected: p.id === props.selectedProjectId },
+        properties: { id: p.id, selected: p.id === props.selectedProjectId, color: p.color },
         geometry: { type: 'Point', coordinates: [p.longitude, p.latitude] },
       })),
     });
@@ -539,7 +551,7 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
         .filter((p) => p.area && p.id !== props.editingProjectId)
         .map((p) => ({
           type: 'Feature',
-          properties: { id: p.id, selected: p.id === props.selectedProjectId },
+          properties: { id: p.id, selected: p.id === props.selectedProjectId, color: p.color },
           geometry: p.area!,
         })),
     });
@@ -609,7 +621,7 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
       el.dataset.color = l.color;
       if (l.id === props.selectedLandId) el.dataset.selected = 'true';
       const price = document.createElement('strong');
-      price.textContent = l.total_price_usd != null ? formatUsdShort(l.total_price_usd) : 'No price';
+      price.textContent = l.total_price_usd != null ? formatUsdShort(l.total_price_usd) : t('No price');
       const area = document.createElement('span');
       area.textContent = formatArea(l.area_m2, false);
       el.append(price, area);
@@ -622,7 +634,7 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
         new maplibregl.Marker({ element: el, anchor: 'center' }).setLngLat(centroid(fromPolygon(l.geometry))).addTo(map),
       );
     }
-  }, [ready, props.lands, props.selectedLandId, props.layers.land, props.layers.labels, zoom]);
+  }, [ready, props.lands, props.selectedLandId, props.layers.land, props.layers.labels, zoom, t]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -707,13 +719,13 @@ const MapView = forwardRef<MapHandle, Props>(function MapView(props, ref) {
 
   return (
     <div className="absolute inset-0">
-      <div ref={containerRef} className="absolute inset-0" aria-label="Map of Tbilisi" role="application" />
-      <div className="pointer-events-none absolute bottom-2 left-1/2 hidden -translate-x-1/2 rounded bg-white/85 px-2 py-0.5 text-[11px] tabular-nums text-ink-soft shadow-sm backdrop-blur sm:block">
+      <div ref={containerRef} className="absolute inset-0"  aria-label={t('Map of Tbilisi')} role="application" />
+      <div className="pointer-events-none absolute bottom-2 left-1/2 hidden -translate-x-1/2 rounded bg-surface/85 px-2 py-0.5 text-[11px] tabular-nums text-ink-soft shadow-sm backdrop-blur sm:block">
         <span ref={coordRef} />
       </div>
       {loadError && (
-        <div role="alert" className="absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-white px-4 py-2 text-sm text-signal shadow-float">
-          {loadError}
+        <div role="alert" className="absolute left-1/2 top-4 -translate-x-1/2 rounded-md bg-surface px-4 py-2 text-sm text-signal shadow-float">
+          {t(loadError)}
         </div>
       )}
     </div>

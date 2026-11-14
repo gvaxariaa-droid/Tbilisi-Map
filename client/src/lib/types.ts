@@ -1,25 +1,23 @@
 export type LngLat = [number, number];
 
 export type Stage =
-  | 'planning'
   | 'design'
-  | 'construction'
-  | 'structure'
-  | 'facade'
-  | 'interior_works'
+  | 'facade_works'
+  | 'construction_low'
+  | 'construction_high'
+  | 'exterior_finishing'
   | 'completed'
-  | 'delivered';
+  | 'partially_completed';
 
-/** In build order: the card's stage meter relies on this sequence. */
+/** In order: the card's stage meter relies on this sequence. `label` is the English source text for translation. */
 export const STAGES: { value: Stage; label: string }[] = [
-  { value: 'planning', label: 'Planning' },
   { value: 'design', label: 'Design' },
-  { value: 'construction', label: 'Construction' },
-  { value: 'structure', label: 'Structure' },
-  { value: 'facade', label: 'Facade' },
-  { value: 'interior_works', label: 'Interior works' },
+  { value: 'facade_works', label: 'Facade works' },
+  { value: 'construction_low', label: 'Construction up to 5 floors' },
+  { value: 'construction_high', label: 'Construction 5+ floors' },
+  { value: 'exterior_finishing', label: 'Exterior finishing' },
   { value: 'completed', label: 'Completed' },
-  { value: 'delivered', label: 'Delivered' },
+  { value: 'partially_completed', label: 'Partially completed (blocks)' },
 ];
 
 export const stageLabel = (s: Stage) => STAGES.find((x) => x.value === s)?.label ?? s;
@@ -28,11 +26,21 @@ export const stageIndex = (s: Stage) => STAGES.findIndex((x) => x.value === s);
 /** Delivery condition a price applies to. */
 export type Frame = 'black' | 'white' | 'green';
 
-export const FRAMES: { value: Frame; label: string; ka: string; swatch: string }[] = [
-  { value: 'black', label: 'Black frame', ka: 'შავი კარკასი', swatch: '#2B2F33' },
-  { value: 'white', label: 'White frame', ka: 'თეთრი კარკასი', swatch: '#E6E9E8' },
-  { value: 'green', label: 'Green frame', ka: 'მწვანე კარკასი', swatch: '#3E9B5F' },
+/** swatch: the square marker; line: the chart line colour (readable on both themes). */
+export const FRAMES: { value: Frame; label: string; short: string; swatch: string; line: string }[] = [
+  { value: 'black', label: 'Black frame', short: 'Black', swatch: '#2B2F33', line: '#7A848A' },
+  { value: 'white', label: 'White frame', short: 'White', swatch: '#E6E9E8', line: '#4C8BD6' },
+  { value: 'green', label: 'Green frame', short: 'Green', swatch: '#3E9B5F', line: '#3E9B5F' },
 ];
+
+export type ProjectColor = 'blue' | 'green' | 'orange' | 'red';
+export const PROJECT_COLORS: { value: ProjectColor; label: string; pin: string; deep: string }[] = [
+  { value: 'blue', label: 'Blue', pin: '#1F5FA8', deep: '#163F70' },
+  { value: 'green', label: 'Green', pin: '#2E9D57', deep: '#1D6B3A' },
+  { value: 'orange', label: 'Light orange', pin: '#F08A3C', deep: '#B5591A' },
+  { value: 'red', label: 'Red', pin: '#D9372E', deep: '#93221B' },
+];
+export const projectColor = (c: ProjectColor | undefined) => PROJECT_COLORS.find((x) => x.value === c) ?? PROJECT_COLORS[0];
 export const frameLabel = (f: Frame) => FRAMES.find((x) => x.value === f)?.label ?? f;
 
 /** One entry in a project's price history. A single price has max = null. */
@@ -45,10 +53,13 @@ export interface PriceEntry {
   created_at: string;
 }
 
+/** A price history entry as sent on save; entries without an id are new. */
 export interface PriceInput {
+  id?: string;
   frame: Frame;
   min: number;
   max: number | null;
+  date: string;
 }
 
 export interface Project {
@@ -57,6 +68,7 @@ export interface Project {
   developer: string;
   architect: string | null;
   construction_stage: Stage;
+  color: ProjectColor;
   handover_date: string | null; // YYYY-MM-DD
   latitude: number;
   longitude: number;
@@ -81,8 +93,9 @@ export interface ProjectInput {
   longitude: number;
   description: string | null;
   area: PolygonGeometry | null;
-  prices: PriceInput[];
-  price_date: string | null;
+  color: ProjectColor;
+  /** The complete history; saved entries left out are deleted. */
+  price_history: PriceInput[];
 }
 
 export interface PolygonGeometry {

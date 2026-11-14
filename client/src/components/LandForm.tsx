@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
 import type { LandColor, LandInput, LandPlot, LngLat } from '../lib/types.ts';
 import { LAND_COLORS } from '../lib/types.ts';
+import { useI18n } from '../lib/i18n.tsx';
 import { amountToInput, formatArea, formatUsd, parseAmount } from '../lib/format.ts';
 import { derivePrices, ringArea, round2, selfIntersects, toPolygon, type PriceAnchor } from '../lib/geo.ts';
 import { Button, Field, Panel, TextInput, UnitInput, inputClass } from './ui.tsx';
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
+  const { t } = useI18n();
   const [name, setName] = useState(land?.name ?? '');
   const [manualArea, setManualArea] = useState(land?.area_is_manual ?? false);
   const [areaText, setAreaText] = useState(land?.area_is_manual ? amountToInput(land.area_m2) : '');
@@ -60,19 +62,19 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const errs: Record<string, string> = {};
-    if (!name.trim()) errs.name = 'Give the land plot a name.';
-    if (vertices.length < 3) errs.shape = 'The boundary needs at least 3 points.';
-    else if (crossing) errs.shape = 'The boundary edges cross each other. Drag the points so the shape does not overlap itself.';
-    if (manualArea && !(manualValue && manualValue > 0)) errs.area = 'Enter the corrected area in m², or use the calculated area.';
+    if (!name.trim()) errs.name = t('Give the land plot a name.');
+    if (vertices.length < 3) errs.shape = t('The boundary needs at least 3 points.');
+    else if (crossing) errs.shape = t('The boundary edges cross each other. Drag the points so the shape does not overlap itself.');
+    if (manualArea && !(manualValue && manualValue > 0)) errs.area = t('Enter the corrected area in m², or use the calculated area.');
     const t = parseAmount(total);
     const p = parseAmount(perM2);
     const k = parseAmount(k2);
-    if (Number.isNaN(t)) errs.total = 'Enter a number in US dollars.';
-    if (Number.isNaN(p)) errs.perM2 = 'Enter a number in US dollars.';
-    if (Number.isNaN(k) || (k != null && k > 100)) errs.k2 = 'Enter a coefficient such as 2.5.';
-    if (cadastral && !/^[0-9A-Za-z.\-/ ]*$/.test(cadastral)) errs.cadastral = 'Use digits, dots and dashes, e.g. 01.72.14.009.012';
+    if (Number.isNaN(t)) errs.total = t('Enter a number in US dollars.');
+    if (Number.isNaN(p)) errs.perM2 = t('Enter a number in US dollars.');
+    if (Number.isNaN(k) || (k != null && k > 100)) errs.k2 = t('Enter a coefficient such as 2.5.');
+    if (cadastral && !/^[0-9A-Za-z.\-/ ]*$/.test(cadastral)) errs.cadastral = t('Use digits, dots and dashes, e.g. 01.72.14.009.012');
     for (const [key, v] of [['ownerPhone', ownerPhone], ['agentPhone', agentPhone]] as const) {
-      if (v && !/^[+0-9 ()\-.]*$/.test(v)) errs[key] = 'Use digits, spaces, +, - and brackets only.';
+      if (v && !/^[+0-9 ()\-.]*$/.test(v)) errs[key] = t('Use digits, spaces, +, - and brackets only.');
     }
     setErrors(errs);
     if (Object.keys(errs).length) return;
@@ -107,42 +109,42 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
 
   return (
     <Panel
-      title={land ? 'Edit land plot' : 'Save land plot'}
+      title={land ? t('Edit land plot') : t('Save land plot')}
       onClose={onCancel}
       accent="land"
       footer={
         <div className="flex items-center justify-end gap-2">
           <Button onClick={onCancel} disabled={busy}>
-            Cancel
+            {t('Cancel')}
           </Button>
           <Button variant="land" type="submit" form="land-form" disabled={busy}>
-            {busy ? 'Saving…' : 'Save land'}
+            {busy ? t('Saving…') : t('Save land')}
           </Button>
         </div>
       }
     >
       <form id="land-form" onSubmit={submit} className="space-y-3 px-4 pb-4" noValidate>
         <div className="rounded-md bg-ochre-tint px-3 py-2.5">
-          <p className="text-[12.5px] text-ink-soft">Area from the drawn boundary</p>
+          <p className="text-[12.5px] text-ink-soft">{t('Area from the drawn boundary')}</p>
           <p className="text-xl font-semibold tabular-nums text-ink">{formatArea(computedArea)}</p>
           <p className="mt-0.5 text-xs text-ink-faint">
-            {vertices.length} corner points. Drag points on the map to adjust; the area updates as you go.
+            {t('{n} corner points. Drag points on the map to adjust; the area updates as you go.', { n: vertices.length })}
           </p>
           {errors.shape && <p className="mt-1 text-xs text-signal">{errors.shape}</p>}
-          {!errors.shape && crossing && <p className="mt-1 text-xs text-signal">The boundary edges cross. Fix the shape before saving.</p>}
+          {!errors.shape && crossing && <p className="mt-1 text-xs text-signal">{t('The boundary edges cross. Fix the shape before saving.')}</p>}
         </div>
 
-        <Field label="Land plot name" error={errors.name}>
-          <TextInput value={name} onChange={(e) => setName(e.target.value)} maxLength={200} autoFocus placeholder="e.g. Digomi, Beliashvili St. plot" />
+        <Field label={t('Land plot name')} error={errors.name}>
+          <TextInput value={name} onChange={(e) => setName(e.target.value)} maxLength={200} autoFocus placeholder={t('e.g. Digomi, Beliashvili St. plot')} />
         </Field>
 
-        <Field label="Cadastral code" error={errors.cadastral}>
+        <Field label={t('Cadastral code')} error={errors.cadastral}>
           <TextInput value={cadastral} onChange={(e) => setCadastral(e.target.value)} maxLength={60} placeholder="e.g. 01.72.14.009.012" className="tabular-nums" />
         </Field>
 
         <div>
-          <span className="mb-1 block text-[12.5px] font-medium text-ink-soft">Colour on the map</span>
-          <div className="flex gap-1.5" role="radiogroup" aria-label="Colour on the map">
+          <span className="mb-1 block text-[12.5px] font-medium text-ink-soft">{t('Colour on the map')}</span>
+          <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label={t('Colour on the map')}>
             {LAND_COLORS.map((c) => (
               <button
                 key={c.value}
@@ -151,11 +153,11 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
                 aria-checked={color === c.value}
                 onClick={() => setColor(c.value)}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-[13px] ring-1 ring-inset ${
-                  color === c.value ? 'bg-white font-medium text-ink ring-2 ring-ink' : 'text-ink-soft ring-line hover:text-ink'
+                  color === c.value ? 'bg-surface font-medium text-ink ring-2 ring-ink' : 'text-ink-soft ring-line hover:text-ink'
                 }`}
               >
                 <span className="h-3.5 w-3.5 rounded-sm" style={{ background: c.fill, boxShadow: `inset 0 0 0 1.5px ${c.line}` }} />
-                {c.label}
+                {t(c.label)}
               </button>
             ))}
           </div>
@@ -172,17 +174,17 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
               }}
               className="h-4 w-4 accent-ochre"
             />
-            Correct the area by hand (e.g. from the cadastral extract)
+            {t('Correct the area by hand (e.g. from the cadastral extract)')}
           </label>
           {manualArea && (
-            <Field label="Land area" error={errors.area} className="mt-2" hint={`Calculated: ${formatArea(computedArea)}`}>
+            <Field label={t('Land area')} error={errors.area} className="mt-2" hint={t('Calculated: {area}', { area: formatArea(computedArea) })}>
               <UnitInput unit="m²" value={areaText} onChange={(e) => setAreaText(e.target.value)} />
             </Field>
           )}
         </div>
 
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Total asking price" error={errors.total}>
+          <Field label={t('Total asking price')} error={errors.total}>
             <UnitInput
               prefix="$"
               unit="USD"
@@ -194,7 +196,7 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
               }}
             />
           </Field>
-          <Field label="Price per m²" error={errors.perM2}>
+          <Field label={t('Price per m²')} error={errors.perM2}>
             <UnitInput
               prefix="$"
               unit="USD/m²"
@@ -209,34 +211,34 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
         </div>
         <p className="-mt-1 text-xs text-ink-faint">
           {effectiveArea
-            ? `Type either price; the other is calculated from ${formatArea(effectiveArea, false)}.`
-            : 'Prices are calculated once the area is known.'}
-          {parseAmount(total) ? ` Total: ${formatUsd(parseAmount(total))}.` : ''}
+            ? t('Type either price; the other is calculated from {area}.', { area: formatArea(effectiveArea, false) })
+            : t('Prices are calculated once the area is known.')}
+          {parseAmount(total) ? ` ${t('Total: {amount}.', { amount: formatUsd(parseAmount(total)) })}` : ''}
         </p>
 
-        <Field label="K2 coefficient" error={errors.k2} className="w-1/2 pr-1.5">
-          <UnitInput value={k2} onChange={(e) => setK2(e.target.value)} placeholder="e.g. 2.5" />
+        <Field label={t('K2 coefficient')} error={errors.k2} className="w-1/2 pr-1.5">
+          <UnitInput value={k2} onChange={(e) => setK2(e.target.value)} placeholder={t('e.g. 2.5')} />
         </Field>
 
         <fieldset className="grid grid-cols-2 gap-3 rounded-md border border-line p-3">
-          <legend className="px-1 text-[12.5px] font-medium text-ink-soft">Contacts (visible to signed-in users only)</legend>
-          <Field label="Owner's name">
+          <legend className="px-1 text-[12.5px] font-medium text-ink-soft">{t('Contacts (visible to signed-in users only)')}</legend>
+          <Field label={t("Owner's name")}>
             <TextInput value={ownerName} onChange={(e) => setOwnerName(e.target.value)} maxLength={200} autoComplete="off" />
           </Field>
-          <Field label="Owner's phone" error={errors.ownerPhone}>
+          <Field label={t("Owner's phone")} error={errors.ownerPhone}>
             <TextInput type="tel" value={ownerPhone} onChange={(e) => setOwnerPhone(e.target.value)} maxLength={40} placeholder="+995 5__ __ __ __" />
           </Field>
-          <Field label="Agent's name">
+          <Field label={t("Agent's name")}>
             <TextInput value={agentName} onChange={(e) => setAgentName(e.target.value)} maxLength={200} autoComplete="off" />
           </Field>
-          <Field label="Agent's phone" error={errors.agentPhone}>
+          <Field label={t("Agent's phone")} error={errors.agentPhone}>
             <TextInput type="tel" value={agentPhone} onChange={(e) => setAgentPhone(e.target.value)} maxLength={40} />
           </Field>
         </fieldset>
 
         <MultiPhotoField existingIds={land?.photo_ids ?? []} value={photos} onChange={setPhotos} />
 
-        <Field label="Additional notes">
+        <Field label={t('Additional notes')}>
           <textarea className={`${inputClass} min-h-[84px]`} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={5000} />
         </Field>
 

@@ -13,6 +13,12 @@ const dec2 = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 });
 
 export const DASH = '—';
 
+let dateLocale = 'en-GB';
+/** Dates follow the interface language; numbers and money always use US formatting ($1,400). */
+export function setDateLocale(locale: string) {
+  dateLocale = locale;
+}
+
 /** $1,400 or $1,400.50 (cents shown only when present). */
 export function formatUsd(v: number | null | undefined): string {
   if (v == null || !Number.isFinite(v)) return DASH;
@@ -63,14 +69,14 @@ export function formatDate(iso: string | null | undefined): string {
   if (!iso) return DASH;
   const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
   if (!y || !m || !d) return DASH;
-  return new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(
+  return new Intl.DateTimeFormat(dateLocale, { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' }).format(
     new Date(Date.UTC(y, m - 1, d)),
   );
 }
 
 export function formatDateTime(iso: string | null | undefined): string {
   if (!iso) return DASH;
-  return new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  return new Intl.DateTimeFormat(dateLocale, { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
 }
 
 /**

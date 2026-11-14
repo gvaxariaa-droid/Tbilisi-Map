@@ -5,7 +5,7 @@ import { derivePrices, fromPolygon, ringArea, selfIntersects, toPolygon } from '
 import { formatArea, formatCoords, formatDate, formatUsd, formatUsdPerM2, parseAmount } from './format.ts';
 import { emptyLandFilters, emptyProjectFilters, filterLands, filterProjects } from './filters.ts';
 import type { Frame, LandPlot, LngLat, PriceEntry, Project } from './types.ts';
-import { circleRing, currentPrices, distanceM, priceSpan, radiusStats } from './prices.ts';
+import { circleRing, currentPrices, distanceM, frameTrend, priceSpan, radiusStats, stepChange } from './prices.ts';
 import { formatPriceRange, formatUsdShort } from './format.ts';
 
 test('ringArea: 100 m × 100 m square in Tbilisi ≈ 10,000 m²', () => {
@@ -86,16 +86,16 @@ const pe = (frame: Frame, min: number, max: number | null = null, date = '2026-0
   ({ id, frame, min, max, date, created_at: `${date}T00:00:00Z` });
 
 const proj = (o: Partial<Project>): Project => ({
-  id: 'x', name: 'P', developer: 'D', architect: null, construction_stage: 'planning', price_history: [], area: null, area_m2: null,
+  id: 'x', name: 'P', developer: 'D', architect: null, construction_stage: 'design', color: 'blue', price_history: [], area: null, area_m2: null,
   handover_date: null, latitude: 41.7, longitude: 44.8, description: null, photo_id: null,
   created_at: '2026-01-01', updated_at: '2026-01-01', ...o,
 });
 
 test('filterProjects: search, stage, developer and price range', () => {
   const list = [
-    proj({ id: 'a', name: 'Vake Park Residence', developer: 'Archi', construction_stage: 'facade', price_history: [pe('white', 1400)] }),
+    proj({ id: 'a', name: 'Vake Park Residence', developer: 'Archi', construction_stage: 'facade_works', price_history: [pe('white', 1400)] }),
     proj({ id: 'b', name: 'Saburtalo Tower', developer: 'Alliance', construction_stage: 'completed', price_history: [pe('black', 800, 950)] }),
-    proj({ id: 'c', name: 'Old Town Lofts', developer: 'Archi', construction_stage: 'planning' }),
+    proj({ id: 'c', name: 'Old Town Lofts', developer: 'Archi', construction_stage: 'design' }),
   ];
   const ids = (l: Project[]) => l.map((p) => p.id);
   assert.deepEqual(ids(filterProjects(list, 'vake', emptyProjectFilters)), ['a']);
@@ -170,4 +170,31 @@ test('radius: distances, circle ring and per-frame averages', () => {
   assert.equal(r1k.projectCount, 2);
   assert.equal(r1k.byFrame.white.avg, 1200);
   assert.equal(r1k.byFrame.white.n, 2);
+});
+
+test('radius overall average uses only the chosen frames', () => {
+  const c: LngLat = [44.79, 41.715];
+  const p = proj({ latitude: 41.715, longitude: 44.79, price_history: [pe('white', 1000), pe('green', 2000)] });
+  assert.equal(radiusStats(c, 500, [p]).overall, 1500);
+  assert.equal(radiusStats(c, 500, [p], ['green']).overall, 2000);
+  assert.equal(radiusStats(c, 500, [p], []).overall, null);
+});
+
+test('price trend: total change, step change and yearly rate', () => {
+  const p = proj({
+    price_history: [
+      pe('white', 1210, null, '2026-01-01', 'w3'),
+      pe('white', 1100, null, '2025-01-01', 'w2'),
+      pe('white', 1000, null, '2024-01-01', 'w1'),
+    ],
+  });
+  const tr = frameTrend(p, 'white')!;
+  assert.equal(tr.first.id, 'w1');
+  assert.equal(tr.last.id, 'w3');
+  assert.equal(tr.change, 210);
+  assert.ok(Math.abs(tr.pct! - 21) < 1e-9);
+  assert.ok(Math.abs(tr.perYear! - 10) < 0.1); // 1000 -> 1210 over two years is 10% a year
+  assert.deepEqual(stepChange(p, p.price_history[0]), { change: 110, pct: 10 });
+  assert.equal(stepChange(p, p.price_history[2]), null);
+  assert.equal(frameTrend(p, 'green'), null);
 });

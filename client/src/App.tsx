@@ -12,11 +12,12 @@ import { useAuth, useData, useToast } from './state/store.tsx';
 import { api } from './lib/api.ts';
 import { emptyLandFilters, emptyProjectFilters, filterLands, filterProjects } from './lib/filters.ts';
 import { fromPolygon } from './lib/geo.ts';
-import { DASH, formatCoords, formatUsdPerM2 } from './lib/format.ts';
-import { radiusStats } from './lib/prices.ts';
-import { FRAMES, frameLabel } from './lib/types.ts';
+import { DASH, formatCoords, formatPriceRange, formatUsdPerM2 } from './lib/format.ts';
+import { currentPrices, distanceM, radiusStats } from './lib/prices.ts';
+import { useI18n } from './lib/i18n.tsx';
+import { FRAMES, projectColor } from './lib/types.ts';
 import type { Basemap } from './lib/mapStyle.ts';
-import type { LandInput, LngLat, PriceEntry, ProjectInput } from './lib/types.ts';
+import type { Frame, LandInput, LngLat, ProjectInput } from './lib/types.ts';
 import type { SinglePhotoValue, MultiPhotoValue } from './components/PhotoFields.tsx';
 
 type Panel =
@@ -49,6 +50,7 @@ export default function App() {
   const data = useData(user?.id ?? null, checked);
   const toast = useToast();
   const mapRef = useRef<MapHandle>(null);
+  const { t } = useI18n();
 
   const [basemap, setBasemap] = useState<Basemap>('satellite');
   const [selection, setSelection] = useState<LngLat | null>(null);
@@ -64,6 +66,8 @@ export default function App() {
   const [dialog, setDialog] = useState<'login' | 'users' | null>(null);
   const [layers, setLayers] = useState<LayerVisibility>(loadLayers);
   const [radii, setRadii] = useState<number[]>([]);
+  /** Frames included in the radius average. */
+  const [radiusFrames, setRadiusFrames] = useState<Frame[]>(['black', 'white', 'green']);
   /** Territory of the project in the open form (committed when Done is pressed in the toolbar). */
   const [formArea, setFormArea] = useState<LngLat[] | null>(null);
 
@@ -144,9 +148,9 @@ export default function App() {
       if (photo.file) saved = await api.uploadProjectPhoto(saved.id, photo.file);
       else if (photo.remove && saved.photo_id) saved = await api.deleteProjectPhoto(saved.id);
       data.upsertProject(saved);
-      toast(id ? 'Project updated' : 'Project added');
+      toast(id ? t('Project updated') : t('Project added'));
     } catch (err) {
-      toast(`Project saved, but the photo was not: ${(err as Error).message}`, 'error');
+      toast(t('Project saved, but the photo was not: {error}', { error: (err as Error).message }), 'error');
     }
     data.refreshStats();
     setSelection(null);
@@ -159,16 +163,16 @@ export default function App() {
     const p = projectById(id);
     if (!p) return;
     setConfirm({
-      title: 'Delete project',
-      message: <>Delete <strong className="text-ink">{p.name}</strong> and its photograph? This cannot be undone.</>,
-      confirmLabel: 'Delete project',
+      title: t('Delete project'),
+      message: t('Delete "{name}", its photograph and price history? This cannot be undone.', { name: p.name }),
+      confirmLabel: t('Delete project'),
       onConfirm: async () => {
         try {
           await api.deleteProject(id);
           data.removeProject(id);
           data.refreshStats();
           setPanel({ kind: 'none' });
-          toast('Project deleted');
+          toast(t('Project deleted'));
         } catch (err) {
           toast((err as Error).message, 'error');
         }
@@ -191,28 +195,6 @@ export default function App() {
   const doneArea = () => {
     if (draw && draw.vertices.length >= 3) setFormArea(draw.vertices);
     setDraw(null);
-  };
-
-  const deletePrice = (projectId: string, e: PriceEntry) => {
-    setConfirm({
-      title: 'Remove price entry',
-      message: (
-        <>
-          Remove the {frameLabel(e.frame).toLowerCase()} price recorded for <strong className="text-ink">{e.date}</strong> from the
-          history? Use this only to correct a mistake.
-        </>
-      ),
-      confirmLabel: 'Remove entry',
-      onConfirm: async () => {
-        try {
-          data.upsertProject(await api.deleteProjectPrice(projectId, e.id));
-          data.refreshStats();
-          toast('Price entry removed');
-        } catch (err) {
-          toast((err as Error).message, 'error');
-        }
-      },
-    });
   };
 
   const finishDrawing = useCallback(() => {
@@ -261,24 +243,24 @@ export default function App() {
     data.upsertLand(saved);
     data.refreshStats();
     setPanel({ kind: 'land', id: saved.id });
-    if (problems.length) toast(`Land saved, but some photo changes failed: ${problems.join(' ')}`, 'error');
-    else toast(id ? 'Land plot updated' : 'Land plot saved');
+    if (problems.length) toast(t('Land saved, but some photo changes failed: {error}', { error: problems.join(' ') }), 'error');
+    else toast(id ? t('Land plot updated') : t('Land plot saved'));
   };
 
   const deleteLand = (id: string) => {
     const l = landById(id);
     if (!l) return;
     setConfirm({
-      title: 'Delete land plot',
-      message: <>Delete <strong className="text-ink">{l.name}</strong>, its boundary, contacts and photographs? This cannot be undone.</>,
-      confirmLabel: 'Delete land plot',
+      title: t('Delete land plot'),
+      message: t('Delete "{name}", its boundary, contacts and photographs? This cannot be undone.', { name: l.name }),
+      confirmLabel: t('Delete land plot'),
       onConfirm: async () => {
         try {
           await api.deleteLand(id);
           data.removeLand(id);
           data.refreshStats();
           setPanel({ kind: 'none' });
-          toast('Land plot deleted');
+          toast(t('Land plot deleted'));
         } catch (err) {
           toast((err as Error).message, 'error');
         }
@@ -344,7 +326,7 @@ export default function App() {
             isAdmin={isAdmin}
             onBack={() => setPanel({ kind: 'project', id: p.id })}
             onClose={() => setPanel({ kind: 'none' })}
-            onDeletePrice={(e) => deletePrice(p.id, e)}
+            onEditPrices={() => editProject(p.id)}
           />
         ) : null;
       }
@@ -432,7 +414,7 @@ export default function App() {
         onSignIn={() => setDialog('login')}
         onSignOut={async () => {
           await logout();
-          toast('Signed out');
+          toast(t('Signed out'));
         }}
         onManageUsers={() => setDialog('users')}
         collapsed={collapsed}
@@ -468,34 +450,34 @@ export default function App() {
           <button
             type="button"
             onClick={() => setMobileMenu(true)}
-            className="pointer-events-auto grid h-9 w-9 place-items-center rounded-md bg-white shadow-float md:hidden"
-            aria-label="Open menu"
+            className="pointer-events-auto grid h-9 w-9 place-items-center rounded-md bg-surface text-ink shadow-float md:hidden"
+            aria-label={t('Open menu')}
           >
             <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden><path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" strokeWidth="1.6" /></svg>
           </button>
-          <div className="pointer-events-auto flex rounded-md bg-white p-0.5 shadow-float" role="group" aria-label="Base map">
+          <div className="pointer-events-auto flex rounded-md bg-surface p-0.5 shadow-float" role="group" aria-label={t('Base map')}>
             {(['satellite', 'streets'] as const).map((b) => (
               <button
                 key={b}
                 type="button"
                 aria-pressed={basemap === b}
                 onClick={() => setBasemap(b)}
-                className={`rounded px-2.5 py-1 text-[13px] ${basemap === b ? 'bg-ink text-white' : 'text-ink-soft hover:text-ink'}`}
+                className={`rounded px-2.5 py-1 text-[13px] ${basemap === b ? 'bg-ink text-surface' : 'text-ink-soft hover:text-ink'}`}
               >
-                {b === 'satellite' ? 'Satellite' : 'Map'}
+                {b === 'satellite' ? t('Satellite') : t('Map')}
               </button>
             ))}
           </div>
         </div>
 
         {/* Layer toggles (they also act as the legend) */}
-        <div className="pointer-events-auto absolute bottom-9 left-3 z-10 flex flex-wrap gap-1 rounded-md bg-white/95 p-1 text-[12px] shadow-sm backdrop-blur" role="group" aria-label="Map layers">
+        <div className="pointer-events-auto absolute bottom-9 left-3 z-10 flex flex-wrap gap-1 rounded-md bg-surface/95 p-1 text-[12px] shadow-sm backdrop-blur" role="group" aria-label={t('Map layers')}>
           {(
             [
               ['projects', 'Projects', <span key="i" className="h-2.5 w-2.5 rounded-full bg-balcony ring-2 ring-white" />],
               ['territories', 'Project areas', <span key="i" className="h-2.5 w-3.5 rounded-sm border border-balcony bg-balcony/25" />],
               ['land', 'Land', <span key="i" className="h-2.5 w-3.5 rounded-sm border border-[#B86A1E] bg-[#F3A55B]/70" />],
-              ['labels', 'Land prices', <span key="i" className="rounded-sm bg-white px-0.5 text-[9px] font-semibold leading-none text-ink ring-1 ring-line">$</span>],
+              ['labels', 'Land prices', <span key="i" className="rounded-sm bg-surface px-0.5 text-[9px] font-semibold leading-none text-ink ring-1 ring-line">$</span>],
             ] as const
           ).map(([key, label, icon]) => {
             const on = layers[key];
@@ -508,10 +490,10 @@ export default function App() {
                 disabled={disabled}
                 onClick={() => setLayers((l) => ({ ...l, [key]: !l[key] }))}
                 className={`flex items-center gap-1.5 rounded px-2 py-1 ${on && !disabled ? 'text-ink' : 'text-ink-faint line-through decoration-ink-faint/60'} hover:bg-paper disabled:cursor-not-allowed`}
-                title={on ? `Hide ${label.toLowerCase()}` : `Show ${label.toLowerCase()}`}
+                title={on ? t('Hide {layer}', { layer: t(label) }) : t('Show {layer}', { layer: t(label) })}
               >
                 <span className={on && !disabled ? '' : 'opacity-40'}>{icon}</span>
-                {label}
+                {t(label)}
               </button>
             );
           })}
@@ -519,7 +501,7 @@ export default function App() {
 
         {/* Selected point: coordinates, radius circles and nearby price averages */}
         {selection && !draw && panel.kind !== 'projectForm' && (
-          <div className="panel-enter pointer-events-auto absolute bottom-[4.5rem] left-1/2 z-10 w-[min(30rem,calc(100%-1.5rem))] -translate-x-1/2 rounded-lg bg-white px-3 py-2 text-[12.5px] shadow-float md:bottom-[5.5rem]">
+          <div className="panel-enter pointer-events-auto absolute bottom-[4.5rem] left-1/2 z-10 flex max-h-[55vh] w-[min(31rem,calc(100%-1.5rem))] -translate-x-1/2 flex-col rounded-lg bg-surface px-3 py-2 text-[12.5px] shadow-float md:bottom-[5.5rem]">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
               <span className="flex items-center gap-1.5 tabular-nums text-ink">
                 <span className="h-2.5 w-2.5 rounded-full bg-signal ring-2 ring-white" />
@@ -527,8 +509,8 @@ export default function App() {
               </span>
               <span className="ml-auto flex gap-1">
                 {isAdmin && (
-                  <button type="button" className="rounded-full bg-ink px-2.5 py-1 text-white hover:bg-ink/90" onClick={startAddProject}>
-                    Add project here
+                  <button type="button" className="rounded-full bg-ink px-2.5 py-1 text-surface hover:bg-ink/90" onClick={startAddProject}>
+                    {t('Add project here')}
                   </button>
                 )}
                 <button
@@ -539,12 +521,12 @@ export default function App() {
                     setRadii([]);
                   }}
                 >
-                  Clear
+                  {t('Clear')}
                 </button>
               </span>
             </div>
             <div className="mt-1.5 flex items-center gap-1.5 border-t border-line pt-1.5">
-              <span className="text-ink-soft">Radius</span>
+              <span className="text-ink-soft">{t('Radius')}</span>
               {RADII.map((m) => {
                 const on = radii.includes(m);
                 return (
@@ -560,48 +542,97 @@ export default function App() {
                 );
               })}
             </div>
-            {radii.length > 0 && (
-              <div className="mt-1.5 overflow-x-auto">
-                <table className="w-full text-right tabular-nums">
-                  <thead className="text-[11px] text-ink-faint">
-                    <tr>
-                      <th className="py-1 pr-2 text-left font-normal">Within</th>
-                      <th className="py-1 pr-2 font-normal">Projects</th>
-                      {FRAMES.map((f) => (
-                        <th key={f.value} className="py-1 pr-2 font-normal">
-                          <span className="inline-flex items-center gap-1">
-                            <span className="h-2 w-2 rounded-sm ring-1 ring-ink/25" style={{ background: f.swatch }} />
-                            {f.label.replace(' frame', '')}
-                          </span>
-                        </th>
-                      ))}
-                      <th className="py-1 font-normal">All</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-line">
-                    {radii.map((m) => {
-                      const st = radiusStats(selection, m, visibleProjects);
-                      const cell = (v: number | null) => (v != null ? formatUsdPerM2(Math.round(v)).replace(' / m²', '') : DASH);
-                      return (
-                        <tr key={m} className="text-ink">
-                          <td className="py-1 pr-2 text-left">{radiusLabel(m)}</td>
-                          <td className="py-1 pr-2">{st.projectCount}</td>
-                          {FRAMES.map((f) => (
-                            <td key={f.value} className="py-1 pr-2" title={`${st.byFrame[f.value].n} projects with a ${f.label.toLowerCase()} price`}>
-                              {cell(st.byFrame[f.value].avg)}
-                            </td>
-                          ))}
-                          <td className="py-1 font-semibold">{cell(st.overall)}</td>
+            {radii.length > 0 && (() => {
+              const maxR = Math.max(...radii);
+              const nearby = visibleProjects
+                .map((p) => ({ p, d: distanceM(selection, [p.longitude, p.latitude]) }))
+                .filter((x) => x.d <= maxR)
+                .sort((a, b) => a.d - b.d);
+              const cell = (v: number | null) => (v != null ? formatUsdPerM2(Math.round(v)).replace(' / m²', '') : DASH);
+              return (
+                <div className="mt-1.5 min-h-0 overflow-y-auto">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-right tabular-nums">
+                      <thead className="text-[11px] text-ink-faint">
+                        <tr>
+                          <th className="py-1 pr-2 text-left font-normal">{t('Within')}</th>
+                          <th className="py-1 pr-2 font-normal">{t('Projects')}</th>
+                          {FRAMES.map((f) => {
+                            const on = radiusFrames.includes(f.value);
+                            return (
+                              <th key={f.value} className="py-1 pr-1 font-normal">
+                                <button
+                                  type="button"
+                                  aria-pressed={on}
+                                  onClick={() => setRadiusFrames((fs) => (on ? fs.filter((x) => x !== f.value) : [...fs, f.value]))}
+                                  title={on ? t('Leave {frame} out of the average', { frame: t(f.label) }) : t('Include {frame} in the average', { frame: t(f.label) })}
+                                  className={`inline-flex items-center gap-1 rounded px-1 py-0.5 hover:bg-paper ${on ? 'text-ink-soft' : 'text-ink-faint line-through'}`}
+                                >
+                                  <span className={`h-2.5 w-2.5 rounded-sm ring-1 ring-ink/25 ${on ? '' : 'opacity-30'}`} style={{ background: f.swatch }} />
+                                  {t(f.short)}
+                                </button>
+                              </th>
+                            );
+                          })}
+                          <th className="py-1 font-normal">{t('Average')}</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <p className="mt-1 text-[11px] text-ink-faint">
-                  Average current price per m² of the projects shown on the map. Ranges count as their midpoint.
-                </p>
-              </div>
-            )}
+                      </thead>
+                      <tbody className="divide-y divide-line">
+                        {radii.map((m) => {
+                          const st = radiusStats(selection, m, visibleProjects, radiusFrames);
+                          return (
+                            <tr key={m} className="text-ink">
+                              <td className="py-1 pr-2 text-left">{radiusLabel(m)}</td>
+                              <td className="py-1 pr-2">{st.projectCount}</td>
+                              {FRAMES.map((f) => (
+                                <td
+                                  key={f.value}
+                                  className={`py-1 pr-2 ${radiusFrames.includes(f.value) ? '' : 'text-ink-faint/60'}`}
+                                  title={t('{n} projects with this price', { n: st.byFrame[f.value].n })}
+                                >
+                                  {cell(st.byFrame[f.value].avg)}
+                                </td>
+                              ))}
+                              <td className="py-1 font-semibold">{cell(st.overall)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="mt-1 text-[11px] text-ink-faint">
+                    {t('Average current price per m² of the projects shown on the map. Ranges count as their midpoint. Click a frame to include it in or leave it out of the average.')}
+                  </p>
+                  {nearby.length > 0 && (
+                    <ul className="mt-1.5 divide-y divide-line border-t border-line">
+                      {nearby.map(({ p, d }) => {
+                        const cur = currentPrices(p);
+                        const shown = FRAMES.filter((f) => radiusFrames.includes(f.value) && cur[f.value]);
+                        return (
+                          <li key={p.id}>
+                            <button type="button" onClick={() => openProject(p.id, true)} className="flex w-full items-center gap-2 rounded px-1 py-1.5 text-left hover:bg-paper">
+                              <span className="h-2.5 w-2.5 shrink-0 rounded-full ring-2 ring-surface" style={{ background: projectColor(p.color).pin }} />
+                              <span className="min-w-0 flex-1 truncate text-ink">{p.name}</span>
+                              <span className="shrink-0 text-[11.5px] tabular-nums text-ink-soft">
+                                {shown.map((f) => (
+                                  <span key={f.value} className="ml-2 inline-flex items-center gap-1">
+                                    <span className="h-2 w-2 rounded-sm ring-1 ring-ink/25" style={{ background: f.swatch }} />
+                                    {formatPriceRange(cur[f.value]!.min, cur[f.value]!.max, false)}
+                                  </span>
+                                ))}
+                              </span>
+                              <span className="w-12 shrink-0 text-right text-[11.5px] tabular-nums text-ink-faint">
+                                {d >= 1000 ? `${(d / 1000).toFixed(1)} km` : `${Math.round(d)} m`}
+                              </span>
+                            </button>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  )}
+                </div>
+              );
+            })()}
           </div>
         )}
 

@@ -110,3 +110,22 @@ export function derivePrices(
   if (anchor === 'total') return { total, perM2: total == null ? perM2 : round2(total / area) };
   return { perM2, total: perM2 == null ? total : round2(perM2 * area) };
 }
+
+/** Area-weighted centroid of an open ring (vertex average for degenerate rings). */
+export function centroid(v: LngLat[]): LngLat {
+  let a = 0;
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < v.length; i++) {
+    const [x0, y0] = v[i];
+    const [x1, y1] = v[(i + 1) % v.length];
+    const f = x0 * y1 - x1 * y0;
+    a += f;
+    x += (x0 + x1) * f;
+    y += (y0 + y1) * f;
+  }
+  if (Math.abs(a) < 1e-14) {
+    return [v.reduce((s, p) => s + p[0], 0) / v.length, v.reduce((s, p) => s + p[1], 0) / v.length];
+  }
+  return [x / (3 * a), y / (3 * a)];
+}

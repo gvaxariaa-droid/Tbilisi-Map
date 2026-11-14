@@ -66,14 +66,68 @@ export interface RadiusStats {
 
 const avg = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null);
 
-export function radiusStats(center: LngLat, radiusM: number, projects: Project[]): RadiusStats {
+export function radiusStats(
+  center: LngLat,
+  radiusM: number,
+  projects: Project[],
+  /** Frames included in the overall average. */
+  frames: Frame[] = ['black', 'white', 'green'],
+): RadiusStats {
   const inside = projects.filter((p) => distanceM(center, [p.longitude, p.latitude]) <= radiusM);
   const byFrame = {} as RadiusStats['byFrame'];
   const all: number[] = [];
   for (const f of FRAMES) {
     const vals = inside.map((p) => currentPrices(p)[f.value]).filter(Boolean).map((e) => midpoint(e!));
     byFrame[f.value] = { avg: avg(vals), n: vals.length };
-    all.push(...vals);
+    if (frames.includes(f.value)) all.push(...vals);
   }
   return { radius: radiusM, projectCount: inside.length, byFrame, overall: avg(all) };
+}
+
+/** Entries of one frame, oldest first. */
+export function frameSeries(project: Pick<Project, 'price_history'>, frame: Frame): PriceEntry[] {
+  return project.price_history
+    .filter((e) => e.frame === frame)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.created_at.localeCompare(b.created_at));
+}
+
+const DAY = 86_400_000;
+const days = (a: string, b: string) => (Date.parse(b) - Date.parse(a)) / DAY;
+
+export interface Trend {
+  first: PriceEntry;
+  last: PriceEntry;
+  change: number; // USD per m², midpoint to midpoint
+  pct: number | null; // total change, percent
+  perYear: number | null; // compound annual growth, percent (needs at least ~2 months of history)
+  days: number;
+}
+
+/** How a frame's price moved from its first to its current entry. */
+export function frameTrend(project: Pick<Project, 'price_history'>, frame: Frame): Trend | null {
+  const s = frameSeries(project, frame);
+  if (s.length < 2) return null;
+  const first = s[0];
+  const last = s[s.length - 1];
+  const a = midpoint(first);
+  const b = midpoint(last);
+  const span = days(first.date, last.date);
+  return {
+    first,
+    last,
+    change: b - a,
+    pct: a > 0 ? ((b - a) / a) * 100 : null,
+    perYear: a > 0 && span >= 60 ? (Math.pow(b / a, 365.25 / span) - 1) * 100 : null,
+    days: span,
+  };
+}
+
+/** Change of one entry against the previous entry of the same frame (null for the first). */
+export function stepChange(project: Pick<Project, 'price_history'>, entry: PriceEntry): { change: number; pct: number | null } | null {
+  const s = frameSeries(project, entry.frame);
+  const i = s.findIndex((e) => e.id === entry.id);
+  if (i <= 0) return null;
+  const a = midpoint(s[i - 1]);
+  const b = midpoint(entry);
+  return { change: b - a, pct: a > 0 ? ((b - a) / a) * 100 : null };
 }

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type ButtonHTMLAttributes, type InputHTMLAttributes, type ReactNode } from 'react';
+import { useI18n } from '../lib/i18n.tsx';
 
 type Variant = 'primary' | 'secondary' | 'danger' | 'ghost' | 'land';
 
 const VARIANTS: Record<Variant, string> = {
-  primary: 'bg-ink text-white hover:bg-ink/90 disabled:bg-ink/40',
-  land: 'bg-ochre text-ink hover:bg-[#c98c14] disabled:bg-ochre/40',
-  secondary: 'bg-white text-ink ring-1 ring-inset ring-line hover:bg-paper disabled:text-ink-faint',
-  danger: 'bg-white text-signal ring-1 ring-inset ring-signal/40 hover:bg-signal hover:text-white disabled:opacity-50',
+  primary: 'bg-ink text-surface hover:bg-ink/90 disabled:bg-ink/40',
+  land: 'bg-ochre text-[#1B2830] hover:brightness-95 disabled:bg-ochre/40',
+  secondary: 'bg-surface text-ink ring-1 ring-inset ring-line hover:bg-paper disabled:text-ink-faint',
+  danger: 'bg-surface text-signal ring-1 ring-inset ring-signal/40 hover:bg-signal hover:text-white disabled:opacity-50',
   ghost: 'text-ink-soft hover:bg-ink/5 hover:text-ink disabled:opacity-40',
 };
 
@@ -54,7 +55,7 @@ export function Field({
 }
 
 export const inputClass =
-  'block w-full rounded-md border border-line bg-white px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-balcony focus:outline-none focus:ring-2 focus:ring-balcony/20 disabled:bg-paper';
+  'block w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-sm text-ink placeholder:text-ink-faint focus:border-balcony focus:outline-none focus:ring-2 focus:ring-balcony/20 disabled:bg-paper';
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={`${inputClass} ${props.className ?? ''}`} />;
@@ -98,7 +99,7 @@ export function Panel({
   const bar = accent === 'project' ? 'bg-balcony' : accent === 'land' ? 'bg-ochre' : accent === 'draft' ? 'bg-signal' : 'bg-transparent';
   return (
     <section
-      className={`panel-enter pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[62vh] flex-col overflow-hidden rounded-t-xl bg-white shadow-float md:inset-x-auto md:bottom-auto md:right-3 md:top-3 md:max-h-[calc(100%-1.5rem)] md:rounded-lg ${
+      className={`panel-enter pointer-events-auto absolute inset-x-0 bottom-0 z-20 flex max-h-[62vh] flex-col overflow-hidden rounded-t-xl bg-surface shadow-float md:inset-x-auto md:bottom-auto md:right-3 md:top-3 md:max-h-[calc(100%-1.5rem)] md:rounded-lg ${
         wide ? 'md:w-[420px]' : 'md:w-[360px]'
       }`}
     >
@@ -116,11 +117,12 @@ export function Panel({
 }
 
 export function CloseButton({ onClick, className = '' }: { onClick(): void; className?: string }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label="Close"
+      aria-label={t('Close')}
       className={`grid h-7 w-7 shrink-0 place-items-center rounded-md text-ink-soft hover:bg-ink/5 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-balcony ${className}`}
     >
       <svg viewBox="0 0 16 16" className="h-4 w-4" aria-hidden>
@@ -144,7 +146,7 @@ export function Modal({ title, onClose, children, width = 'max-w-md' }: { title:
   }, [onClose]);
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} className={`w-full ${width} rounded-lg bg-white shadow-float`}>
+      <div ref={ref} role="dialog" aria-modal="true" aria-label={title} className={`w-full ${width} rounded-lg bg-surface shadow-float`}>
         <header className="flex items-center justify-between border-b border-line px-5 py-3">
           <h2 className="text-base font-semibold text-ink">{title}</h2>
           <CloseButton onClick={onClose} />
@@ -164,12 +166,13 @@ export interface ConfirmState {
 
 export function ConfirmDialog({ state, onClose }: { state: ConfirmState; onClose(): void }) {
   const [busy, setBusy] = useState(false);
+  const { t } = useI18n();
   return (
     <Modal title={state.title} onClose={busy ? () => {} : onClose} width="max-w-sm">
       <div className="text-sm leading-relaxed text-ink-soft">{state.message}</div>
       <div className="mt-5 flex justify-end gap-2">
         <Button onClick={onClose} disabled={busy}>
-          Keep it
+          {t('Keep it')}
         </Button>
         <Button
           variant="danger"
@@ -184,7 +187,7 @@ export function ConfirmDialog({ state, onClose }: { state: ConfirmState; onClose
             }
           }}
         >
-          {busy ? 'Deleting…' : state.confirmLabel}
+          {busy ? t('Deleting…') : state.confirmLabel}
         </Button>
       </div>
     </Modal>
@@ -194,7 +197,7 @@ export function ConfirmDialog({ state, onClose }: { state: ConfirmState; onClose
 /** Label / value row used by the information cards. */
 export function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="grid grid-cols-[7.5rem_1fr] gap-x-3 py-1.5 text-[13px]">
+    <div className="grid grid-cols-[8.5rem_1fr] gap-x-3 py-1.5 text-[13px]">
       <dt className="text-ink-faint">{label}</dt>
       <dd className="min-w-0 break-words text-ink">{children}</dd>
     </div>

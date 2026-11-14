@@ -3,6 +3,39 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --paper: 242 244 243;
+    --surface: 255 255 255;
+    --line: 213 219 216;
+    --ink: 27 40 48;
+    --ink-soft: 79 94 102;
+    --ink-faint: 120 133 139;
+    --balcony: 31 95 168;
+    --balcony-deep: 22 63 112;
+    --balcony-tint: 227 236 246;
+    --ochre: 217 154 30;
+    --ochre-deep: 138 90 14;
+    --ochre-tint: 251 240 218;
+    --signal: 224 54 44;
+    color-scheme: light;
+  }
+  /* Matte navy dark theme */
+  :root.dark {
+    --paper: 15 22 31;
+    --surface: 22 31 42;
+    --line: 41 54 68;
+    --ink: 226 233 238;
+    --ink-soft: 160 174 183;
+    --ink-faint: 117 132 142;
+    --balcony: 104 162 230;
+    --balcony-deep: 150 192 242;
+    --balcony-tint: 27 45 68;
+    --ochre: 227 170 58;
+    --ochre-deep: 238 196 112;
+    --ochre-tint: 52 41 20;
+    --signal: 239 86 76;
+    color-scheme: dark;
+  }
   html,
   body,
   #root {
@@ -13,7 +46,7 @@
     font-feature-settings: 'tnum' 0;
   }
   :focus-visible {
-    outline-color: theme('colors.balcony.DEFAULT');
+    outline-color: rgb(var(--balcony));
   }
 }
 
@@ -32,24 +65,24 @@
   border-radius: 4px;
   border: 1.5px solid #b86a1e;
   background: rgba(255, 255, 255, 0.94);
-  color: theme('colors.ink.DEFAULT');
+  color: #1b2830;
   font: 600 11px/1.15 theme('fontFamily.sans');
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
   cursor: pointer;
   box-shadow: 0 1px 3px rgba(27, 40, 48, 0.25);
 }
-.land-label span { font-weight: 400; font-size: 10px; color: theme('colors.ink.soft'); }
+.land-label span { font-weight: 400; font-size: 10px; color: #4f5e66; }
 .land-label[data-color='red'] { border-color: #9e2a22; }
 .land-label[data-color='green'] { border-color: #22693c; }
-.land-label[data-selected='true'] { outline: 2px solid theme('colors.ink.DEFAULT'); outline-offset: 1px; }
+.land-label[data-selected='true'] { outline: 2px solid #1b2830; outline-offset: 1px; }
 .land-label:hover { background: #fff; }
 
 .radius-label {
   margin-bottom: 2px;
   padding: 1px 6px;
   border-radius: 999px;
-  background: theme('colors.signal');
+  background: #e0362c;
   color: #fff;
   font: 600 10.5px/1.4 theme('fontFamily.sans');
   white-space: nowrap;
@@ -67,15 +100,22 @@
   .panel-enter { animation: none; }
 }
 
+/* MapLibre controls follow the theme */
+.dark .maplibregl-ctrl-group { background: rgb(var(--surface)); }
+.dark .maplibregl-ctrl-group button + button { border-top-color: rgb(var(--line)); }
+.dark .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: invert(1) hue-rotate(180deg); }
+.dark .maplibregl-ctrl-attrib { background: rgb(var(--surface) / 0.8); color: rgb(var(--ink-soft)); }
+.dark .maplibregl-ctrl-attrib a { color: rgb(var(--ink-soft)); }
+
 /* MapLibre controls, restyled to match the interface */
 .maplibregl-ctrl-group {
   border-radius: 6px !important;
   box-shadow: 0 1px 2px rgba(27, 40, 48, 0.08), 0 8px 24px -6px rgba(27, 40, 48, 0.22) !important;
 }
 .maplibregl-ctrl-scale {
-  border-color: theme('colors.ink.soft') !important;
-  color: theme('colors.ink.DEFAULT');
-  background: rgba(255, 255, 255, 0.85) !important;
+  border-color: rgb(var(--ink-soft)) !important;
+  color: rgb(var(--ink));
+  background: rgb(var(--surface) / 0.85) !important;
   font: 11px/1.4 theme('fontFamily.sans');
 }
 .maplibregl-ctrl-attrib { font-size: 10.5px; }

@@ -12,7 +12,7 @@ import { upload, storePhoto } from './photos.js';
  * the client derives it from the history so both always agree.
  */
 const SELECT = `
-  SELECT p.id, p.name, p.developer, p.architect, p.construction_stage,
+  SELECT p.id, p.name, p.developer, p.architect, p.construction_stage, p.color,
          p.handover_date, p.latitude, p.longitude, p.description, p.created_at, p.updated_at,
          CASE WHEN p.area_geom IS NULL THEN NULL ELSE ST_AsGeoJSON(p.area_geom, 8)::json END AS area,
          CASE WHEN p.area_geom IS NULL THEN NULL
@@ -48,24 +48,28 @@ async function checkArea(area) {
   }
 }
 
-/** Add a history row for each frame whose price differs from that frame's current price. */
-async function recordPrices(c, projectId, prices, date, userId) {
-  if (!prices.length) return;
-  const { rows } = await c.query(
-    `SELECT DISTINCT ON (frame) frame, price_min_usd AS min, price_max_usd AS max
-       FROM project_prices WHERE project_id = $1
-      ORDER BY frame, effective_date DESC, created_at DESC`,
-    [projectId],
-  );
-  const current = Object.fromEntries(rows.map((r) => [r.frame, r]));
-  for (const p of prices) {
-    const cur = current[p.frame];
-    if (cur && Number(cur.min) === p.min && (cur.max == null ? null : Number(cur.max)) === p.max) continue;
-    await c.query(
-      `INSERT INTO project_prices (project_id, frame, price_min_usd, price_max_usd, effective_date, created_by)
-       VALUES ($1, $2, $3, $4, COALESCE($5::date, current_date), $6)`,
-      [projectId, p.frame, p.min, p.max, date, userId],
-    );
+/**
+ * Make the stored price history match `list`: update entries that carry an id, insert new ones,
+ * and delete saved entries the list no longer contains. `undefined` leaves the history untouched.
+ */
+async function syncPrices(c, projectId, list, userId) {
+  if (!list) return;
+  const keep = list.filter((p) => p.id).map((p) => p.id);
+  await c.query('DELETE FROM project_prices WHERE project_id = $1 AND NOT (id = ANY($2::uuid[]))', [projectId, keep]);
+  for (const p of list) {
+    if (p.id) {
+      await c.query(
+        `UPDATE project_prices SET frame = $3, price_min_usd = $4, price_max_usd = $5, effective_date = $6
+          WHERE id = $1 AND project_id = $2`,
+        [p.id, projectId, p.frame, p.min, p.max, p.date],
+      );
+    } else {
+      await c.query(
+        `INSERT INTO project_prices (project_id, frame, price_min_usd, price_max_usd, effective_date, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [projectId, p.frame, p.min, p.max, p.date, userId],
+      );
+    }
   }
 }
 
@@ -95,12 +99,12 @@ projectsRouter.post(
     const id = await tx(async (c) => {
       const { rows } = await c.query(
         `INSERT INTO projects (name, developer, architect, construction_stage, handover_date,
-                               latitude, longitude, description, area_geom, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${AREA_SQL('$9')}, $10) RETURNING id`,
+                               latitude, longitude, description, area_geom, created_by, color)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, ${AREA_SQL('$9')}, $10, $11) RETURNING id`,
         [d.name, d.developer, d.architect, d.construction_stage, d.handover_date,
-         d.latitude, d.longitude, d.description, d.area ? JSON.stringify(d.area) : null, req.user.id],
+         d.latitude, d.longitude, d.description, d.area ? JSON.stringify(d.area) : null, req.user.id, d.color],
       );
-      await recordPrices(c, rows[0].id, d.prices, d.price_date, req.user.id);
+      await syncPrices(c, rows[0].id, d.price_history, req.user.id);
       return rows[0].id;
     });
     res.status(201).json(await getProject(id));
@@ -117,13 +121,14 @@ projectsRouter.put(
     await tx(async (c) => {
       const { rowCount } = await c.query(
         `UPDATE projects SET name = $2, developer = $3, architect = $4, construction_stage = $5,
-                handover_date = $6, latitude = $7, longitude = $8, description = $9, area_geom = ${AREA_SQL('$10')}
+                handover_date = $6, latitude = $7, longitude = $8, description = $9, area_geom = ${AREA_SQL('$10')},
+                color = $11
          WHERE id = $1`,
         [id, d.name, d.developer, d.architect, d.construction_stage, d.handover_date,
-         d.latitude, d.longitude, d.description, d.area ? JSON.stringify(d.area) : null],
+         d.latitude, d.longitude, d.description, d.area ? JSON.stringify(d.area) : null, d.color],
       );
       if (!rowCount) throw httpError(404, 'Project not found.');
-      await recordPrices(c, id, d.prices, d.price_date, req.user.id);
+      await syncPrices(c, id, d.price_history, req.user.id);
     });
     res.json(await getProject(id));
   }),

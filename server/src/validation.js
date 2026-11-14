@@ -2,17 +2,17 @@ import { z } from 'zod';
 import { round2 } from './http.js';
 
 export const STAGES = [
-  'planning',
   'design',
-  'construction',
-  'structure',
-  'facade',
-  'interior_works',
+  'facade_works',
+  'construction_low',
+  'construction_high',
+  'exterior_finishing',
   'completed',
-  'delivered',
+  'partially_completed',
 ];
-export const UNDER_CONSTRUCTION_STAGES = ['construction', 'structure', 'facade', 'interior_works'];
-export const COMPLETED_STAGES = ['completed', 'delivered'];
+// Partly completed projects still have blocks being built, so they count as under construction.
+export const UNDER_CONSTRUCTION_STAGES = ['facade_works', 'construction_low', 'construction_high', 'exterior_finishing', 'partially_completed'];
+export const COMPLETED_STAGES = ['completed'];
 
 /** Optional free text: '' and null become null. */
 const optText = (max) =>
@@ -57,9 +57,12 @@ export const FRAMES = ['black', 'white', 'green'];
 
 const priceEntry = z
   .object({
+    /** Present for an entry that already exists; absent for a new one. */
+    id: z.string().uuid().optional(),
     frame: z.enum(FRAMES),
     min: z.number().finite().min(0).max(1_000_000),
     max: z.number().finite().min(0).max(1_000_000).nullable().optional().transform((v) => v ?? null),
+    date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD'),
   })
   .refine((p) => p.max == null || p.max >= p.min, { message: 'The upper price must be at least the lower price', path: ['max'] })
   // "1,200 to 1,200" is a single price
@@ -81,18 +84,12 @@ export const projectSchema = z.object({
   description: optText(5000),
   /** Optional project territory drawn on the map. */
   area: polygonSchema.nullable().optional().transform((v) => v ?? null),
-  /** Current prices as entered in the form; only frames that changed are added to the history. */
-  prices: z
-    .array(priceEntry)
-    .max(3)
-    .optional()
-    .default([])
-    .refine((list) => new Set(list.map((p) => p.frame)).size === list.length, { message: 'Enter each frame once' }),
-  /** Date the entered prices take effect; defaults to today. */
-  price_date: z
-    .union([dateStr, z.literal(''), z.null()])
-    .optional()
-    .transform((v) => v || null),
+  color: z.enum(['blue', 'green', 'orange', 'red']).optional().default('blue'),
+  /**
+   * The complete price history as edited in the form. Entries with an id are updated,
+   * entries without one are added, and saved entries missing from the list are deleted.
+   */
+  price_history: z.array(priceEntry).max(300).optional(),
 });
 
 export const landSchema = z
