@@ -73,7 +73,9 @@ export interface Project {
   latitude: number;
   longitude: number;
   description: string | null;
+  /** Cover photo (the first one), kept for convenience. */
   photo_id: string | null;
+  photo_ids: string[];
   /** Optional project territory. */
   area: PolygonGeometry | null;
   area_m2: number | null;
@@ -104,6 +106,8 @@ export interface PolygonGeometry {
 }
 
 export type LandColor = 'red' | 'orange' | 'green';
+export type DealStatus = 'sold' | 'not_interested';
+export type SeenStatus = 'seen' | 'not_seen';
 
 export const LAND_COLORS: { value: LandColor; label: string; fill: string; line: string }[] = [
   { value: 'orange', label: 'Light orange', fill: '#F3A55B', line: '#B86A1E' },
@@ -124,6 +128,8 @@ export interface LandPlot {
   k2_coefficient: number | null;
   color: LandColor;
   cadastral_code: string | null;
+  deal_status: DealStatus | null;
+  seen_status: SeenStatus | null;
   /** Contacts are only present for signed-in users. */
   owner_name?: string | null;
   owner_phone?: string | null;
@@ -145,6 +151,8 @@ export interface LandInput {
   k2_coefficient: number | null;
   color: LandColor;
   cadastral_code: string | null;
+  deal_status: DealStatus | null;
+  seen_status: SeenStatus | null;
   owner_name: string | null;
   owner_phone: string | null;
   agent_name: string | null;

@@ -4,7 +4,8 @@ import { asyncHandler, httpError, idParam } from '../http.js';
 import { projectSchema } from '../validation.js';
 import { requireAdmin } from '../auth.js';
 import { removeQuietly } from '../storage.js';
-import { upload, storePhoto } from './photos.js';
+import { config } from '../config.js';
+import { upload, storePhoto, storePhotos } from './photos.js';
 
 /**
  * price_history: every price entry, newest first.
@@ -18,7 +19,9 @@ const SELECT = `
          CASE WHEN p.area_geom IS NULL THEN NULL
               ELSE round(ST_Area(p.area_geom::geography)::numeric, 2) END AS area_m2,
          (SELECT ph.id FROM photos ph WHERE ph.project_id = p.id
-           ORDER BY ph.created_at DESC LIMIT 1) AS photo_id,
+           ORDER BY ph.created_at LIMIT 1) AS photo_id,
+         COALESCE((SELECT json_agg(ph.id ORDER BY ph.created_at)
+                     FROM photos ph WHERE ph.project_id = p.id), '[]'::json) AS photo_ids,
          COALESCE((SELECT json_agg(json_build_object(
                      'id', pp.id, 'frame', pp.frame, 'min', pp.price_min_usd, 'max', pp.price_max_usd,
                      'date', pp.effective_date, 'created_at', pp.created_at)
@@ -163,7 +166,30 @@ projectsRouter.delete(
   }),
 );
 
-/** Upload or replace the project's photograph (one photo per project). */
+/** Add one or more photographs to a project (the first one is the cover). */
+projectsRouter.post(
+  '/:id/photos',
+  requireAdmin,
+  upload.array('photos', 12),
+  asyncHandler(async (req, res) => {
+    const id = idParam(req);
+    const files = req.files || [];
+    if (!files.length) throw httpError(400, 'Choose at least one photo to upload.');
+    const { rows } = await query(
+      `SELECT (SELECT count(*)::int FROM photos WHERE project_id = $1) AS n,
+              EXISTS (SELECT 1 FROM projects WHERE id = $1) AS exists`,
+      [id],
+    );
+    if (!rows[0].exists) throw httpError(404, 'Project not found.');
+    if (rows[0].n + files.length > config.maxPhotosPerLand) {
+      throw httpError(400, `A project can have at most ${config.maxPhotosPerLand} photos.`);
+    }
+    await storePhotos(files, { projectId: id });
+    res.json(await getProject(id));
+  }),
+);
+
+/** Replace all of the project's photographs with one (kept for older clients). */
 projectsRouter.post(
   '/:id/photo',
   requireAdmin,

@@ -18,7 +18,7 @@ import { useI18n } from './lib/i18n.tsx';
 import { FRAMES, projectColor } from './lib/types.ts';
 import type { Basemap } from './lib/mapStyle.ts';
 import type { Frame, LandInput, LngLat, ProjectInput } from './lib/types.ts';
-import type { SinglePhotoValue, MultiPhotoValue } from './components/PhotoFields.tsx';
+import type { MultiPhotoValue } from './components/PhotoFields.tsx';
 
 type Panel =
   | { kind: 'none' }
@@ -141,17 +141,24 @@ export default function App() {
     setPanel({ kind: 'projectForm', id });
   };
 
-  const saveProject = async (input: ProjectInput, photo: SinglePhotoValue, id?: string) => {
+  const saveProject = async (input: ProjectInput, photos: MultiPhotoValue, id?: string) => {
     let saved = id ? await api.updateProject(id, input) : await api.createProject(input);
     data.upsertProject(saved);
-    try {
-      if (photo.file) saved = await api.uploadProjectPhoto(saved.id, photo.file);
-      else if (photo.remove && saved.photo_id) saved = await api.deleteProjectPhoto(saved.id);
-      data.upsertProject(saved);
-      toast(id ? t('Project updated') : t('Project added'));
-    } catch (err) {
-      toast(t('Project saved, but the photo was not: {error}', { error: (err as Error).message }), 'error');
+    const problems: string[] = [];
+    for (const pid of photos.removedIds) {
+      await api.deletePhoto(pid).catch((e: Error) => problems.push(e.message));
     }
+    if (photos.added.length) {
+      try {
+        saved = await api.uploadProjectPhotos(saved.id, photos.added);
+      } catch (e) {
+        problems.push((e as Error).message);
+      }
+    }
+    if (photos.removedIds.length && !photos.added.length) saved = await api.getProject(saved.id).catch(() => saved);
+    data.upsertProject(saved);
+    if (problems.length) toast(t('Project saved, but the photo was not: {error}', { error: problems.join(' ') }), 'error');
+    else toast(id ? t('Project updated') : t('Project added'));
     data.refreshStats();
     setSelection(null);
     setFormArea(null);
@@ -342,7 +349,7 @@ export default function App() {
             drawingArea={draw?.target === 'project'}
             onDrawArea={startDrawArea}
             onClearArea={() => setFormArea(null)}
-            onSave={(input, photo) => saveProject(input, photo, panel.id)}
+            onSave={(input, photos) => saveProject(input, photos, panel.id)}
             onCancel={() => {
               setSelection(null);
               setFormArea(null);
@@ -432,6 +439,8 @@ export default function App() {
           selectedProjectId={selectedProjectId}
           selectedLandId={selectedLandId}
           selection={draw ? null : selection}
+          pointDraggable={panel.kind === 'projectForm' && !draw}
+          onPointDrag={setSelection}
           draw={draw}
           formArea={panel.kind === 'projectForm' ? formArea : null}
           editingProjectId={panel.kind === 'projectForm' ? (panel.id ?? null) : null}
@@ -474,14 +483,14 @@ export default function App() {
         <div className="pointer-events-auto absolute bottom-9 left-3 z-10 flex flex-wrap gap-1 rounded-md bg-surface/95 p-1 text-[12px] shadow-sm backdrop-blur" role="group" aria-label={t('Map layers')}>
           {(
             [
-              ['projects', 'Projects', <span key="i" className="h-2.5 w-2.5 rounded-full bg-balcony ring-2 ring-white" />],
-              ['territories', 'Project areas', <span key="i" className="h-2.5 w-3.5 rounded-sm border border-balcony bg-balcony/25" />],
-              ['land', 'Land', <span key="i" className="h-2.5 w-3.5 rounded-sm border border-[#B86A1E] bg-[#F3A55B]/70" />],
-              ['labels', 'Land prices', <span key="i" className="rounded-sm bg-surface px-0.5 text-[9px] font-semibold leading-none text-ink ring-1 ring-line">$</span>],
+              ['projects', 'Projects', <span key="i" className="grid h-3.5 w-3.5 place-items-center rounded-full bg-balcony ring-2 ring-surface"><span className="h-1.5 w-1 rounded-[1px] border border-white" /></span>],
+              ['territories', 'Project areas', <span key="i" className="h-2.5 w-3.5 rounded-sm border border-dashed border-balcony bg-balcony/25" />],
+              ['land', 'Land', <span key="i" className="h-2.5 w-3.5 rounded-[1px] border-2 border-[#B86A1E] bg-[repeating-linear-gradient(135deg,#F3A55B_0_2px,transparent_2px_4px)]" />],
+              ['labels', 'Labels', <span key="i" className="rounded-sm bg-surface px-0.5 text-[9px] font-semibold leading-none text-ink ring-1 ring-line">$</span>],
             ] as const
           ).map(([key, label, icon]) => {
             const on = layers[key];
-            const disabled = key === 'labels' && !layers.land;
+            const disabled = key === 'labels' && !layers.land && !layers.projects;
             return (
               <button
                 key={key}

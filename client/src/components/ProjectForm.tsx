@@ -5,7 +5,7 @@ import { amountToInput, formatArea, formatUsd, parseAmount } from '../lib/format
 import { ringArea, toPolygon } from '../lib/geo.ts';
 import { useI18n } from '../lib/i18n.tsx';
 import { Button, Field, Panel, TextInput, UnitInput, inputClass } from './ui.tsx';
-import { SinglePhotoField, type SinglePhotoValue } from './PhotoFields.tsx';
+import { MultiPhotoField, type MultiPhotoValue } from './PhotoFields.tsx';
 
 interface Props {
   project?: Project;
@@ -17,7 +17,7 @@ interface Props {
   drawingArea: boolean;
   onDrawArea(): void;
   onClearArea(): void;
-  onSave(input: ProjectInput, photo: SinglePhotoValue): Promise<void>;
+  onSave(input: ProjectInput, photos: MultiPhotoValue): Promise<void>;
   onCancel(): void;
 }
 
@@ -58,7 +58,7 @@ export default function ProjectForm(props: Props) {
   const [lat, setLat] = useState(project ? String(project.latitude) : selection ? selection[1].toFixed(6) : '');
   const [lng, setLng] = useState(project ? String(project.longitude) : selection ? selection[0].toFixed(6) : '');
   const [description, setDescription] = useState(project?.description ?? '');
-  const [photo, setPhoto] = useState<SinglePhotoValue>({ file: null, remove: false });
+  const [photos, setPhotos] = useState<MultiPhotoValue>({ added: [], removedIds: [] });
   const [rows, setRows] = useState<PriceRow[]>(() =>
     (project?.price_history ?? []).map((e) => ({
       key: e.id,
@@ -151,7 +151,7 @@ export default function ProjectForm(props: Props) {
           color,
           price_history: history,
         },
-        photo,
+        photos,
       );
     } catch (err) {
       setServerError((err as Error).message);
@@ -300,7 +300,7 @@ export default function ProjectForm(props: Props) {
 
         <fieldset className="rounded-md border border-line p-3">
           <legend className="px-1 text-[12.5px] font-medium text-ink-soft">{t('Location')}</legend>
-          <p className="mb-2 text-xs text-ink-faint">{t('Click the map to place the project. You can correct the numbers by hand.')}</p>
+          <p className="mb-2 text-xs text-ink-faint">{t('Click the map or drag the red point to place the project. You can correct the numbers by hand.')}</p>
           <div className="grid grid-cols-2 gap-3">
             <Field label={t('Latitude')} error={errors.lat}>
               <TextInput inputMode="decimal" value={lat} onChange={(e) => typeCoord(e.target.value, lng)} placeholder="41.715100" className="tabular-nums" />
@@ -332,7 +332,12 @@ export default function ProjectForm(props: Props) {
           {errors.area && <p className="mt-1 text-xs text-signal">{errors.area}</p>}
         </fieldset>
 
-        <SinglePhotoField existingId={project?.photo_id ?? null} value={photo} onChange={setPhoto} />
+        <MultiPhotoField
+          label={t('Project photographs')}
+          existingIds={project?.photo_ids ?? (project?.photo_id ? [project.photo_id] : [])}
+          value={photos}
+          onChange={setPhotos}
+        />
 
         <Field label={t('Description / notes')}>
           <textarea className={`${inputClass} min-h-[84px]`} value={description} onChange={(e) => setDescription(e.target.value)} maxLength={5000} />

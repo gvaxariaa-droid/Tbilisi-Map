@@ -40,6 +40,7 @@ export const KA: Record<string, string> = {
   'Project areas': 'პროექტის ტერიტორიები',
   'Land': 'მიწა',
   'Land prices': 'მიწის ფასები',
+  'Labels': 'წარწერები',
   'Hide {layer}': 'დამალვა: {layer}',
   'Show {layer}': 'ჩვენება: {layer}',
   'No price': 'ფასი არ არის',
@@ -299,6 +300,21 @@ export const KA: Record<string, string> = {
   'Land plot updated': 'ნაკვეთი განახლდა',
   'Land plot deleted': 'ნაკვეთი წაიშალა',
   'Land saved, but some photo changes failed: {error}': 'ნაკვეთი შეინახა, მაგრამ ზოგი ფოტო ვერა: {error}',
+
+  // Land status, photos, location
+  'Deal status': 'გარიგების სტატუსი',
+  'SOLD': 'გაყიდულია',
+  'Not interested': 'არ გვაინტერესებს',
+  'The plot is shown greyed out on the map. Press the button again to clear it.': 'ნაკვეთი რუკაზე ნაცრისფრად ჩანს. მოსახსნელად ღილაკს ისევ დააჭირეთ.',
+  'Leave both off while the plot is still open.': 'სანამ ნაკვეთი აქტუალურია, ორივე ღილაკი გამორთული დატოვეთ.',
+  'Viewing status': 'ნახვის სტატუსი',
+  'Seen': 'ნანახია',
+  'Not seen': 'არ არის ნანახი',
+  'Status': 'სტატუსი',
+  'Project photographs': 'პროექტის ფოტოები',
+  'Drag to move the project': 'გადაათრიეთ პროექტის ადგილის შესაცვლელად',
+  'Click the map or drag the red point to place the project. You can correct the numbers by hand.':
+    'პროექტის ადგილისთვის დააწკაპუნეთ რუკაზე ან გადაათრიეთ წითელი წერტილი. კოორდინატების შესწორება ხელითაც შეგიძლიათ.',
 
   // Accounts
   'Email': 'ელფოსტა',

@@ -17,7 +17,7 @@ function selectSql(includeContacts) {
            ST_AsGeoJSON(l.geom, 8)::json AS geometry,
            l.area_m2, l.area_is_manual,
            round(ST_Area(l.geom::geography)::numeric, 2) AS computed_area_m2,
-           l.total_price_usd, l.price_per_m2_usd, l.k2_coefficient, l.color, l.cadastral_code,
+           l.total_price_usd, l.price_per_m2_usd, l.k2_coefficient, l.color, l.cadastral_code, l.deal_status, l.seen_status,
            ${includeContacts ? 'l.owner_name, l.owner_phone, l.agent_name, l.agent_phone,' : ''}
            l.notes, l.created_at, l.updated_at,
            COALESCE((SELECT json_agg(ph.id ORDER BY ph.created_at)
@@ -81,10 +81,11 @@ landRouter.post(
     const { rows } = await query(
       `INSERT INTO land_plots (name, geom, area_m2, area_is_manual, total_price_usd, price_per_m2_usd,
                                k2_coefficient, owner_name, owner_phone, agent_name, agent_phone, notes, created_by,
-                               color, cadastral_code)
-       VALUES ($1, ${GEOM_SQL}, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+                               color, cadastral_code, deal_status, seen_status)
+       VALUES ($1, ${GEOM_SQL}, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id`,
       [d.name, JSON.stringify(d.geometry), d.area, d.area_is_manual, d.total, d.perM2, d.k2_coefficient,
-       d.owner_name, d.owner_phone, d.agent_name, d.agent_phone, d.notes, req.user.id, d.color, d.cadastral_code],
+       d.owner_name, d.owner_phone, d.agent_name, d.agent_phone, d.notes, req.user.id, d.color, d.cadastral_code,
+       d.deal_status, d.seen_status],
     );
     res.status(201).json(await getLand(rows[0].id, true));
   }),
@@ -99,10 +100,12 @@ landRouter.put(
     const { rowCount } = await query(
       `UPDATE land_plots SET name = $1, geom = ${GEOM_SQL}, area_m2 = $3, area_is_manual = $4,
               total_price_usd = $5, price_per_m2_usd = $6, k2_coefficient = $7, owner_name = $8,
-              owner_phone = $9, agent_name = $10, agent_phone = $11, notes = $12, color = $14, cadastral_code = $15
+              owner_phone = $9, agent_name = $10, agent_phone = $11, notes = $12, color = $14, cadastral_code = $15,
+              deal_status = $16, seen_status = $17
        WHERE id = $13`,
       [d.name, JSON.stringify(d.geometry), d.area, d.area_is_manual, d.total, d.perM2, d.k2_coefficient,
-       d.owner_name, d.owner_phone, d.agent_name, d.agent_phone, d.notes, id, d.color, d.cadastral_code],
+       d.owner_name, d.owner_phone, d.agent_name, d.agent_phone, d.notes, id, d.color, d.cadastral_code,
+       d.deal_status, d.seen_status],
     );
     if (!rowCount) throw httpError(404, 'Land plot not found.');
     res.json(await getLand(id, true));

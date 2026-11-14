@@ -112,10 +112,12 @@ function NewThumb({ file, onRemove }: { file: File; onRemove(): void }) {
 
 /** Several optional photographs per land plot; changes apply when the form is saved. */
 export function MultiPhotoField({
+  label,
   existingIds,
   value,
   onChange,
 }: {
+  label?: string;
   existingIds: string[];
   value: MultiPhotoValue;
   onChange(v: MultiPhotoValue): void;
@@ -127,7 +129,7 @@ export function MultiPhotoField({
 
   return (
     <div>
-      <span className="mb-1 block text-[12.5px] font-medium text-ink-soft">{t('Land photographs')}</span>
+      <span className="mb-1 block text-[12.5px] font-medium text-ink-soft">{label ?? t('Land photographs')}</span>
       <div className="grid grid-cols-3 gap-1.5">
         {kept.map((id, i) => (
           <Thumb key={id} src={photoUrl(id)} label={t('Photo {n}', { n: i + 1 })} onRemove={() => onChange({ ...value, removedIds: [...value.removedIds, id] })} />

@@ -102,6 +102,8 @@ export const landSchema = z
     price_per_m2_usd: usd(1_000_000),
     k2_coefficient: z.number().finite().min(0).max(100).nullable().optional().transform((v) => v ?? null),
     color: z.enum(['red', 'orange', 'green']).optional().default('orange'),
+    deal_status: z.enum(['sold', 'not_interested']).nullable().optional().transform((v) => v ?? null),
+    seen_status: z.enum(['seen', 'not_seen']).nullable().optional().transform((v) => v ?? null),
     cadastral_code: z
       .union([
         z

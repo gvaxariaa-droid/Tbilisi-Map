@@ -20,6 +20,36 @@ function PhotoOrPlaceholder({ id, alt }: { id: string | null; alt: string }) {
   return <img src={photoUrl(id)} alt={alt} className="h-full w-full object-cover" loading="lazy" onError={() => setFailed(true)} />;
 }
 
+/** Cover photo with a thumbnail strip when the project has several photos. */
+function Gallery({ project }: { project: Project }) {
+  const { t } = useI18n();
+  const ids = project.photo_ids?.length ? project.photo_ids : project.photo_id ? [project.photo_id] : [];
+  const [i, setI] = useState(0);
+  const current = ids[Math.min(i, ids.length - 1)] ?? null;
+  return (
+    <div>
+      <div className="aspect-video w-full overflow-hidden rounded-md">
+        <PhotoOrPlaceholder key={current ?? 'none'} id={current} alt={project.name} />
+      </div>
+      {ids.length > 1 && (
+        <div className="mt-1.5 flex gap-1 overflow-x-auto">
+          {ids.map((id, n) => (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setI(n)}
+              aria-label={t('Photo {n}', { n: n + 1 })}
+              className={`h-11 w-16 shrink-0 overflow-hidden rounded ${n === i ? 'ring-2 ring-balcony' : 'opacity-70 hover:opacity-100'}`}
+            >
+              <img src={photoUrl(id)} alt="" className="h-full w-full object-cover" loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /** Construction stages are a real sequence, so the card shows where the build is. */
 export function StageMeter({ project }: { project: Project }) {
   const { t } = useI18n();
@@ -259,9 +289,7 @@ export function ProjectCard({ project: p, isAdmin, onClose, onEdit, onRecord, on
       }
     >
       <div className="relative px-3 pt-3">
-        <div className="aspect-video w-full overflow-hidden rounded-md">
-          <PhotoOrPlaceholder id={p.photo_id} alt={p.name} />
-        </div>
+        <Gallery project={p} />
         <CloseButton onClick={onClose} className="absolute right-4 top-4 bg-surface/90 shadow-sm" />
       </div>
       <div className="px-4 pb-3 pt-3">
@@ -332,9 +360,7 @@ export function ProjectRecord({
       }
     >
       <div className="px-4 pb-4">
-        <div className="aspect-video w-full overflow-hidden rounded-md">
-          <PhotoOrPlaceholder id={p.photo_id} alt={p.name} />
-        </div>
+        <Gallery project={p} />
         <div className="mt-3">
           <StageMeter project={p} />
         </div>

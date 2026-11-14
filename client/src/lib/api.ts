@@ -46,6 +46,12 @@ export const api = {
   deleteProject: (id: string) => request<void>(`/projects/${id}`, { method: 'DELETE' }),
   uploadProjectPhoto: (id: string, file: File) =>
     request<Project>(`/projects/${id}/photo`, { method: 'POST', form: one(file, 'photo') }),
+  uploadProjectPhotos: (id: string, files: File[]) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append('photos', f));
+    return request<Project>(`/projects/${id}/photos`, { method: 'POST', form: fd });
+  },
+  getProject: (id: string) => request<Project>(`/projects/${id}`),
   deleteProjectPhoto: (id: string) => request<Project>(`/projects/${id}/photo`, { method: 'DELETE' }),
   deleteProjectPrice: (id: string, priceId: string) =>
     request<Project>(`/projects/${id}/prices/${priceId}`, { method: 'DELETE' }),

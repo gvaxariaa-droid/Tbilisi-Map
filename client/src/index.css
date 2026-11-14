@@ -61,8 +61,8 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 2px 6px 3px;
-  border-radius: 4px;
+  padding: 2px 6px 3px 14px;
+  border-radius: 3px;
   border: 1.5px solid #b86a1e;
   background: rgba(255, 255, 255, 0.94);
   color: #1b2830;
@@ -77,6 +77,79 @@
 .land-label[data-color='green'] { border-color: #22693c; }
 .land-label[data-selected='true'] { outline: 2px solid #1b2830; outline-offset: 1px; }
 .land-label:hover { background: #fff; }
+
+.land-label[data-seen]::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 1.5px solid #fff;
+}
+.land-label { position: relative; }
+.land-label[data-seen='seen']::after { background: #2e9d57; }
+.land-label[data-seen='not_seen']::after { background: #e0362c; }
+.land-label::before {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 4px;
+  width: 5px;
+  height: 5px;
+  transform: rotate(45deg);
+  border: 1.2px solid currentColor;
+  opacity: 0.55;
+}
+
+/* SOLD / not interested stamp inside a plot */
+.land-stamp {
+  padding: 2px 10px;
+  border: 2.5px solid currentColor;
+  border-radius: 4px;
+  font: 700 22px/1.1 theme('fontFamily.sans');
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  transform: rotate(-12deg);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.land-stamp[data-status='sold'] { color: #d9372e; }
+.land-stamp[data-status='not_interested'] { color: #5d676d; font-size: 17px; }
+
+/* Project name tag under the pin */
+.project-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 180px;
+  padding: 3px 10px 4px;
+  border-radius: 999px;
+  border: 1.5px dashed #185fa5;
+  background: rgba(255, 255, 255, 0.95);
+  color: #1b2830;
+  font: 600 11px/1.2 theme('fontFamily.sans');
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(27, 40, 48, 0.25);
+}
+.project-label strong { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.project-label span { font-weight: 400; font-size: 10px; color: #4f5e66; white-space: nowrap; }
+.project-label[data-selected='true'] { outline: 2px solid #1b2830; outline-offset: 1px; }
+
+/* Draggable project location while editing */
+.drag-point {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #e0362c;
+  border: 3px solid #fff;
+  box-shadow: 0 0 0 6px rgba(224, 54, 44, 0.22), 0 2px 6px rgba(0, 0, 0, 0.35);
+  cursor: grab;
+}
+.drag-point:active { cursor: grabbing; }
 
 .radius-label {
   margin-bottom: 2px;

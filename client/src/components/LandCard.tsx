@@ -36,7 +36,7 @@ export default function LandCard({ land: l, isAdmin, signedIn, onClose, onEdit, 
       title={l.name}
       onClose={onClose}
       accent="land"
-      accentColor={landColor(l.color).fill}
+      accentColor={l.deal_status ? '#9AA3A8' : landColor(l.color).fill}
       footer={
         <div className="flex gap-2">
           {isAdmin && (
@@ -99,6 +99,22 @@ export default function LandCard({ land: l, isAdmin, signedIn, onClose, onEdit, 
         )}
 
         <dl className="mt-2 divide-y divide-line/70">
+          {(l.deal_status || l.seen_status) && (
+            <Row label={t('Status')}>
+              <span className="flex flex-wrap gap-1.5">
+                {l.deal_status && (
+                  <span className={`rounded px-1.5 py-0.5 text-[11.5px] font-semibold ${l.deal_status === 'sold' ? 'bg-signal/15 text-signal' : 'bg-ink/10 text-ink-soft'}`}>
+                    {l.deal_status === 'sold' ? t('SOLD') : t('Not interested')}
+                  </span>
+                )}
+                {l.seen_status && (
+                  <span className={`rounded px-1.5 py-0.5 text-[11.5px] font-semibold ${l.seen_status === 'seen' ? 'bg-[#2E9D57]/15 text-[#2E9D57]' : 'bg-signal/15 text-signal'}`}>
+                    {l.seen_status === 'seen' ? t('Seen') : t('Not seen')}
+                  </span>
+                )}
+              </span>
+            </Row>
+          )}
           <Row label={t("Cadastral code")}>
             {l.cadastral_code ? <span className="select-all tabular-nums">{l.cadastral_code}</span> : DASH}
           </Row>

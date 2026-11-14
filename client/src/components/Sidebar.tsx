@@ -340,14 +340,31 @@ function LandTab(p: Props) {
               <button
                 type="button"
                 onClick={() => p.onSelectLand(l.id)}
-                className={`flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-surface ${l.id === p.selectedLandId ? 'bg-surface ring-1 ring-ochre/60' : ''}`}
+                className={`flex w-full items-start gap-2.5 rounded-md px-2.5 py-2 text-left hover:bg-surface ${l.id === p.selectedLandId ? 'bg-surface ring-1 ring-ochre/60' : ''} ${l.deal_status ? 'opacity-60' : ''}`}
               >
                 <span
                   className="mt-1 h-2.5 w-2.5 shrink-0 rotate-45"
-                  style={{ background: landColor(l.color).fill, boxShadow: `0 0 0 1px ${landColor(l.color).line}` }}
+                  style={
+                    l.deal_status
+                      ? { background: '#B9C0C4', boxShadow: '0 0 0 1px #8A9399' }
+                      : { background: landColor(l.color).fill, boxShadow: `0 0 0 1px ${landColor(l.color).line}` }
+                  }
                 />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[13.5px] font-medium text-ink">{l.name}</span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="truncate text-[13.5px] font-medium text-ink">{l.name}</span>
+                    {l.deal_status && (
+                      <span className={`shrink-0 rounded px-1 text-[10px] font-semibold ${l.deal_status === 'sold' ? 'bg-signal/15 text-signal' : 'bg-ink/10 text-ink-soft'}`}>
+                        {l.deal_status === 'sold' ? t('SOLD') : t('Not interested')}
+                      </span>
+                    )}
+                    {l.seen_status && (
+                      <span
+                        className={`h-2 w-2 shrink-0 rounded-full ${l.seen_status === 'seen' ? 'bg-[#2E9D57]' : 'bg-signal'}`}
+                        title={l.seen_status === 'seen' ? t('Seen') : t('Not seen')}
+                      />
+                    )}
+                  </span>
                   <span className="block truncate text-[12px] text-ink-soft">
                     {formatArea(l.area_m2, false)}
                     {l.cadastral_code ? `, ${l.cadastral_code}` : ''}

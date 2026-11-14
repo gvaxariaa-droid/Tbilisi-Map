@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import type { LandColor, LandInput, LandPlot, LngLat } from '../lib/types.ts';
+import type { DealStatus, LandColor, LandInput, LandPlot, LngLat, SeenStatus } from '../lib/types.ts';
 import { LAND_COLORS } from '../lib/types.ts';
 import { useI18n } from '../lib/i18n.tsx';
 import { amountToInput, formatArea, formatUsd, parseAmount } from '../lib/format.ts';
@@ -31,6 +31,8 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
   const [notes, setNotes] = useState(land?.notes ?? '');
   const [color, setColor] = useState<LandColor>(land?.color ?? 'orange');
   const [cadastral, setCadastral] = useState(land?.cadastral_code ?? '');
+  const [deal, setDeal] = useState<DealStatus | null>(land?.deal_status ?? null);
+  const [seen, setSeen] = useState<SeenStatus | null>(land?.seen_status ?? null);
   const [photos, setPhotos] = useState<MultiPhotoValue>({ added: [], removedIds: [] });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
@@ -98,6 +100,8 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
           notes: notes.trim() || null,
           color,
           cadastral_code: cadastral.trim() || null,
+          deal_status: deal,
+          seen_status: seen,
         },
         photos,
       );
@@ -241,6 +245,53 @@ export default function LandForm({ land, vertices, onSave, onCancel }: Props) {
         <Field label={t('Additional notes')}>
           <textarea className={`${inputClass} min-h-[84px]`} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={5000} />
         </Field>
+
+        <fieldset className="rounded-md border border-line p-3">
+          <legend className="px-1 text-[12.5px] font-medium text-ink-soft">{t('Deal status')}</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ['sold', t('SOLD'), 'bg-signal text-white ring-signal', 'text-signal ring-signal/40'],
+                ['not_interested', t('Not interested'), 'bg-ink-soft text-surface ring-ink-soft', 'text-ink-soft ring-line'],
+              ] as const
+            ).map(([value, label, on, off]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={deal === value}
+                onClick={() => setDeal(deal === value ? null : value)}
+                className={`h-9 rounded-md text-[13px] font-semibold ring-1 ring-inset ${deal === value ? on : `bg-surface ${off} hover:bg-paper`}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-1.5 text-xs text-ink-faint">
+            {deal ? t('The plot is shown greyed out on the map. Press the button again to clear it.') : t('Leave both off while the plot is still open.')}
+          </p>
+        </fieldset>
+
+        <fieldset className="rounded-md border border-line p-3">
+          <legend className="px-1 text-[12.5px] font-medium text-ink-soft">{t('Viewing status')}</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {(
+              [
+                ['seen', t('Seen'), 'bg-[#2E9D57] text-white ring-[#2E9D57]', 'text-[#2E9D57] ring-[#2E9D57]/40'],
+                ['not_seen', t('Not seen'), 'bg-signal text-white ring-signal', 'text-signal ring-signal/40'],
+              ] as const
+            ).map(([value, label, on, off]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={seen === value}
+                onClick={() => setSeen(seen === value ? null : value)}
+                className={`h-9 rounded-md text-[13px] font-semibold ring-1 ring-inset ${seen === value ? on : `bg-surface ${off} hover:bg-paper`}`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
 
         {serverError && (
           <p role="alert" className="rounded-md bg-signal/10 px-3 py-2 text-sm text-signal">

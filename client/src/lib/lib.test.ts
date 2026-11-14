@@ -87,7 +87,7 @@ const pe = (frame: Frame, min: number, max: number | null = null, date = '2026-0
 
 const proj = (o: Partial<Project>): Project => ({
   id: 'x', name: 'P', developer: 'D', architect: null, construction_stage: 'design', color: 'blue', price_history: [], area: null, area_m2: null,
-  handover_date: null, latitude: 41.7, longitude: 44.8, description: null, photo_id: null,
+  handover_date: null, latitude: 41.7, longitude: 44.8, description: null, photo_id: null, photo_ids: [],
   created_at: '2026-01-01', updated_at: '2026-01-01', ...o,
 });
 
@@ -110,7 +110,7 @@ test('filterProjects: search, stage, developer and price range', () => {
 const land = (o: Partial<LandPlot>): LandPlot => ({
   id: 'x', name: 'L', geometry: toPolygon([[0, 0], [1, 0], [1, 1]]), area_m2: 1000, area_is_manual: false,
   computed_area_m2: 1000, total_price_usd: null, price_per_m2_usd: null, k2_coefficient: null, notes: null,
-  color: 'orange', cadastral_code: null,
+  color: 'orange', cadastral_code: null, deal_status: null, seen_status: null,
   photo_ids: [], created_at: '2026-01-01T00:00:00Z', updated_at: '2026-01-01T00:00:00Z', ...o,
 });
 

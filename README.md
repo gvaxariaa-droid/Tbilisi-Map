@@ -99,6 +99,10 @@ Contacts are removed **on the server** for anonymous requests; they are never se
 * **Theme and language.** The sun/moon switch above the account row changes between the light and the matte navy dark theme; GEO/ENG switches the interface language. Both are remembered per browser.
 * **Radius analysis.** Click any point on the map and choose 500 m, 1 km and/or 2 km. Circles appear, and a table shows how many projects fall inside and their average current price per m² for each frame and overall. Click a frame's square to include it in or leave it out of the overall average. The projects inside are listed by distance; clicking one opens its card and moves the map to it.
 * **Project territories.** In the project form, *Draw territory* outlines the site with the same drawing tools as land; *Done* returns to the form.
+* **Telling land from projects.** Land plots use diagonal hatching with a thick solid border and a square price/area tag. Projects use a smooth fill with a dashed border, a pin with a building icon and, from zoom 15, a rounded tag with the project name and price.
+* **Land status.** At the bottom of the land form: SOLD or Not interested (the plot turns pale grey with a large pale stamp), and Seen / Not seen (a green or red dot on the plot's tag and in the inventory).
+* **Moving a project.** While the project form is open, drag the red point on the map, click elsewhere, or type the coordinates.
+* **Photos.** Projects and land plots both take several photos; the first is the cover.
 * **Map layers.** The toggles at the bottom left show or hide projects, project areas, land plots and land price tags.
 * **Land plots.** Choose a map colour (light orange, red, green) and record the cadastral code; the code is searchable. From zoom 14, each plot shows a small tag with its total price and area.
 * **Statistics.** SQL aggregates over all records. "Under construction" = construction, structure, facade, interior works. "Completed" = completed + delivered.

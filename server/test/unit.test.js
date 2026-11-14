@@ -65,6 +65,11 @@ test('landSchema accepts colour and cadastral code', () => {
   assert.equal(landSchema.parse({ name: 'P', geometry: square }).color, 'orange');
   assert.throws(() => landSchema.parse({ name: 'P', geometry: square, color: 'purple' }));
   assert.throws(() => landSchema.parse({ name: 'P', geometry: square, cadastral_code: '<b>' }));
+  const st = landSchema.parse({ name: 'P', geometry: square, deal_status: 'sold', seen_status: 'not_seen' });
+  assert.equal(st.deal_status, 'sold');
+  assert.equal(st.seen_status, 'not_seen');
+  assert.equal(landSchema.parse({ name: 'P', geometry: square }).deal_status, null);
+  assert.throws(() => landSchema.parse({ name: 'P', geometry: square, deal_status: 'reserved' }));
 });
 
 test('landSchema requires a closed single-ring polygon', () => {
