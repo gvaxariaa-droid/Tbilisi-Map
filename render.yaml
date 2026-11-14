@@ -3,14 +3,14 @@
 databases:
   - name: tpm-db
     databaseName: tpm
-    plan: basic-256mb   # paid plan: includes daily backups / point-in-time recovery
+    plan: free          # free: expires after 30 days; upgrade to basic-256mb for real use
     region: frankfurt
 
 services:
   - type: web
     name: tbilisi-property-map
     runtime: docker
-    plan: starter
+    plan: free          # free: sleeps after 15 min idle; upgrade to starter for real use
     region: frankfurt
     healthCheckPath: /api/health
     envVars:
